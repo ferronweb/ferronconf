@@ -482,4 +482,4 @@ tcp *:5432 {
 
 ## License
 
-[Your license here]
+MIT
