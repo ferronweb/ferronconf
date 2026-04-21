@@ -81,6 +81,7 @@
       },
       "end": "(?=\\{(?!\\{)|$)",
       "patterns": [
+        { "include": "#comment" },
         { "include": "#number" },
         { "include": "#boolean" },
         { "include": "#string" },
