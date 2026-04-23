@@ -389,3 +389,19 @@ fn test_top_level_ambiguity() {
         panic!("dir_bare did not parse as HostBlock");
     }
 }
+
+#[test]
+fn test_mixed_string_edge_case() {
+    let input = r#"
+    dir_mixed "arg1" arg2 "arg3"
+    "#;
+    let config = Config::from_str(input).expect("dir_mixed failed");
+    if let Statement::Directive(d) = &config.statements[0] {
+        assert_eq!(d.name, "dir_mixed");
+        assert_eq!(d.args[0].as_str(), Some("arg1"));
+        assert_eq!(d.args[1].as_str(), Some("arg2"));
+        assert_eq!(d.args[2].as_str(), Some("arg3"));
+    } else {
+        panic!("dir_quoted did not parse as Directive");
+    }
+}

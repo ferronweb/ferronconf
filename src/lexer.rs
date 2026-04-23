@@ -292,6 +292,7 @@ impl<'a> Lexer<'a> {
             self.prev_token,
             Some(TokenKind::Identifier)
                 | Some(TokenKind::Number)
+                | Some(TokenKind::StringQuoted)
                 | Some(TokenKind::StringBare)
                 | Some(TokenKind::OpRegex)
                 | Some(TokenKind::OpNotRegex)
