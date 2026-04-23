@@ -203,6 +203,9 @@ impl Parser {
             TokenKind::OpNotRegex => Ok(Operator::NotRegex),
             TokenKind::OpIn => Ok(Operator::In),
 
+            // Bare string "in" is treated as the `in` operator
+            TokenKind::StringBare if token.lexeme.as_deref() == Some("in") => Ok(Operator::In),
+
             _ => Err(ParseError {
                 message: "Invalid operator".into(),
                 span: token.span,
