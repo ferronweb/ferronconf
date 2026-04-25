@@ -1,6 +1,6 @@
 [package]
 name = "ferronconf"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Dorian Niemiec <dorian@ferron.sh>"]
 description = "A Rust library for parsing `ferron.conf` configuration files — a domain-specific language for custom web server configurations."
