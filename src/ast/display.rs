@@ -39,7 +39,7 @@ impl fmt::Display for Statement {
             Statement::Directive(d) => write!(f, "{}", d),
             Statement::HostBlock(h) => write!(f, "{}", h),
             Statement::MatchBlock(m) => write!(f, "{}", m),
-            Statement::GlobalBlock(g) => write!(f, "{}", g),
+            Statement::GlobalBlock(g) => write!(f, "{{\n{}}}", g),
             Statement::SnippetBlock(s) => write!(f, "{}", s),
         }
     }
