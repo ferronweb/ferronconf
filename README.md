@@ -1,6 +1,6 @@
 # `ferronconf`
 
-A Rust library for parsing `ferron.conf` configuration files — a domain-specific language for custom web server configurations.
+A Rust library for parsing `ferron.conf` configuration files — a domain-specific language for [Ferron web server](https://ferron.sh) configurations.
 
 ## Overview
 
@@ -9,6 +9,8 @@ This crate provides a reference implementation of the `ferron.conf` format, incl
 - **Lexer** — Tokenizes configuration files with support for comments, strings, numbers, booleans, and interpolation
 - **Parser** — Builds an AST from tokens with full error reporting
 - **AST** — Type-safe representation of configuration structures
+
+This crate is published to simplify parsing `ferron.conf` files for Ferron web server configurations; this can be useful when building tooling around Ferron.
 
 For the complete format specification, see [SPECIFICATION.md](./SPECIFICATION.md).
 
