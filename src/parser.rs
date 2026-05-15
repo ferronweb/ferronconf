@@ -661,11 +661,22 @@ impl Parser {
         } else if labels.len() == 4 {
             let mut octets = [0; 4];
             let mut is_ipv4 = true;
+            let mut looks_like_ipv4 = true;
             for (i, label) in labels.iter().enumerate() {
-                match label.parse::<u8>() {
-                    Ok(octet) => octets[i] = octet,
-                    Err(_) => {
-                        is_ipv4 = false;
+                if is_ipv4 {
+                    match label.parse::<u8>() {
+                        Ok(octet) => octets[i] = octet,
+                        Err(_) => {
+                            is_ipv4 = false;
+                        }
+                    }
+                }
+
+                if !is_ipv4 {
+                    if label.chars().any(|c| !c.is_ascii_digit()) {
+                        looks_like_ipv4 = false;
+                    }
+                    if !looks_like_ipv4 {
                         break;
                     }
                 }
@@ -673,6 +684,11 @@ impl Parser {
 
             if is_ipv4 {
                 HostLabels::IpAddr(IpAddr::V4(Ipv4Addr::from(octets)))
+            } else if looks_like_ipv4 {
+                return Err(ParseError {
+                    message: "Invalid IPv4 address".into(),
+                    span: self.peek().span,
+                });
             } else {
                 HostLabels::Hostname(labels)
             }
@@ -809,8 +825,6 @@ impl Parser {
             | TokenKind::Star
             | TokenKind::LBracket
             | TokenKind::Identifier
-            | TokenKind::Match
-            | TokenKind::Snippet
             | TokenKind::Boolean
                 if top_level && self.looks_like_host() =>
             {
