@@ -1,6 +1,6 @@
 //! A Rust library for parsing `ferron.conf` configuration files.
 //!
-//! `ferron.conf` is a domain-specific language for custom web server configurations.
+//! `ferron.conf` is a domain-specific language for Ferron web server configurations.
 //! This crate provides a reference implementation including a lexer, parser, and AST.
 //!
 //! # Features

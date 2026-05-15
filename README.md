@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ferronconf = "0.1.0"
+ferronconf = "0.2.0"
 ```
 
 ## Quick start

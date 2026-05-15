@@ -73,7 +73,9 @@ impl fmt::Display for HostBlock {
 impl fmt::Display for MatchBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "match {} {{", self.matcher)?;
-        let mut indented = indented(f).with_format(indenter::Format::Uniform { indentation: "  " });
+        let mut indented = indented(f).with_format(indenter::Format::Uniform {
+            indentation: "    ",
+        });
         for expr in &self.expr {
             writeln!(indented, "{}", expr)?;
         }
@@ -89,7 +91,9 @@ impl fmt::Display for SnippetBlock {
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut indented = indented(f).with_format(indenter::Format::Uniform { indentation: "  " });
+        let mut indented = indented(f).with_format(indenter::Format::Uniform {
+            indentation: "    ",
+        });
         for stmt in &self.statements {
             writeln!(indented, "{}", stmt)?;
         }
