@@ -405,3 +405,56 @@ fn test_mixed_string_edge_case() {
         panic!("dir_quoted did not parse as Directive");
     }
 }
+
+#[test]
+fn test_unclosed_interpolation_in_quoted_string() {
+    // Quoted string contains an opening interpolation but no closing '}}'
+    let input = r#"directive "prefix {{ missing""#;
+    let res = Config::from_str(input);
+    assert!(
+        res.is_err(),
+        "Expected parse error for unclosed interpolation in quoted string"
+    );
+}
+
+#[test]
+fn test_unclosed_interpolation_bare() {
+    // Bare interpolation start without a closing '}}'
+    let input = r#"directive {{ missing"#;
+    let res = Config::from_str(input);
+    assert!(
+        res.is_err(),
+        "Expected parse error for unclosed interpolation in bare interpolation"
+    );
+}
+
+#[test]
+fn test_number_trailing_dot_is_error() {
+    // A numeric literal with a trailing dot (e.g., `3.`) should be invalid
+    let input = r#"directive 3."#;
+    assert!(
+        Config::from_str(input).is_err(),
+        "Expected parse error for number with trailing dot"
+    );
+}
+
+#[test]
+fn test_comments_inside_match_block_are_ignored() {
+    // Comments inside match blocks are currently skipped by the lexer; ensure parsing still succeeds
+    let input = r#"
+match curl_client {
+    # comment here
+    request.header.user_agent ~ "curl"
+}
+"#;
+    let config = Config::from_str(input).expect("Failed to parse match block with comment inside");
+    let match_blocks = config.find_match_blocks();
+    assert_eq!(match_blocks.len(), 1);
+    let expr = &match_blocks[0].expr[0];
+    assert!(expr.is_regex());
+    assert_eq!(
+        expr.left.as_identifier().map(|v| v.join(".")),
+        Some("request.header.user_agent".to_string())
+    );
+    assert_eq!(expr.right.as_str(), Some("curl"));
+}
