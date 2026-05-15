@@ -95,7 +95,7 @@ boolean         ::= 'true'
 
 number          ::= '-'? DIGIT+ ( '.' DIGIT+ )?
 
-/* comments are skipped only between statements; comments inside `match` blocks are not accepted. */
+/* comments are skipped. */
 comment         ::= '#' comment-char*
 comment-char    ::= . - ( '\r' | '\n' )
 

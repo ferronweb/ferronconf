@@ -155,6 +155,7 @@
         {
           "name": "meta.matcher.expression.ferron",
           "patterns": [
+            { "include": "#comment" },
             { "include": "#identifier-path" },
             { "include": "#operator" },
             { "include": "#string" },

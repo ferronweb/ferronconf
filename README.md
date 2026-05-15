@@ -159,8 +159,6 @@ Supported operators: `==`, `!=`, `~` (regex), `!~` (negated regex), `in`
 server_name example.com  # inline comment
 ```
 
-**Note:** Comments are not allowed inside `match` blocks.
-
 ## Data types
 
 | Type | Example | Description |
@@ -475,12 +473,6 @@ tcp *:5432 {
     proxy localhost:5432
 }
 ```
-
-## Limitations
-
-- Bare strings after identifiers may be ambiguous with host blocks at the top level
-- Comments are not supported inside `match` blocks
-- IPv4 octets are validated to be in range 0–255
 
 ## License
 

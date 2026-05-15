@@ -1,4 +1,4 @@
-# `ferron.conf` file format specification (v1.0)
+# `ferron.conf` file format specification (v1.1)
 
 ## 1. Overview
 
@@ -19,7 +19,6 @@ The configuration file is encoded in UTF-8 and contains:
 
 - **Whitespace** (spaces, tabs, newlines) is discarded by the lexer except where syntactically significant.
 - **Comments** begin with `#` and extend to the end of the line.
-- Comments are only recognized between statements; they are not allowed inside `match` blocks.
 
 ### 2.3 Tokens
 
@@ -396,7 +395,6 @@ The reference parser reports errors with:
 ### 9.1 Lexer behavior
 
 - Bare strings are only allowed after certain token types (identifiers, numbers, operators) to avoid ambiguity.
-- Comments are skipped between statements but not inside `match` blocks.
 - The lexer is case-sensitive for keywords (`match`, `snippet`) and boolean values.
 
 ### 9.2 Parser behavior
@@ -407,4 +405,4 @@ The reference parser reports errors with:
 
 ## 10. Backward compatibility
 
-This specification defines version 1.0 of the Ferron configuration format. Future versions may extend the grammar with additional features while maintaining backward compatibility where possible.
+This specification defines version 1.1 of the Ferron configuration format. Future versions may extend the grammar with additional features while maintaining backward compatibility where possible.

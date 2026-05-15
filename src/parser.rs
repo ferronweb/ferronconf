@@ -271,6 +271,8 @@ impl Parser {
     }
 
     fn parse_match_expression(&mut self) -> Result<MatcherExpression, ParseError> {
+        self.skip_ignorable_tokens();
+
         let left = self.parse_operand()?;
         let op = self.parse_operator()?;
         let right = self.parse_operand()?;
