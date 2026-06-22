@@ -187,7 +187,7 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace(&mut self) -> (bool, usize) {
         let mut had_newlines = false;
-        let mut consecutive_newlines = 0;
+        let mut consecutive_newlines: usize = 0;
         while matches!(self.current, Some(c) if c.is_whitespace()) {
             if matches!(self.current, Some('\n') | Some('\r')) {
                 had_newlines = true;
@@ -196,11 +196,7 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         // blank lines = newlines - 1 (e.g., 2 newlines = 1 blank line)
-        let blank_lines = if consecutive_newlines > 1 {
-            consecutive_newlines - 1
-        } else {
-            0
-        };
+        let blank_lines = consecutive_newlines.saturating_sub(1);
         (had_newlines, blank_lines)
     }
 
