@@ -7,6 +7,7 @@
 //! The lexer is an internal implementation detail. Users should parse
 //! configuration via [`Config::from_str`](crate::Config).
 
+#[cfg_attr(feature = "lexer-public", visibility::make(pub))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) enum TokenKind {
     /// An identifier (e.g., directive name, hostname label).
@@ -86,6 +87,7 @@ impl PartialEq for Span {
 }
 
 /// A token produced by the lexer.
+#[cfg_attr(feature = "lexer-public", visibility::make(pub))]
 #[derive(Debug, Clone)]
 pub(crate) struct Token {
     /// The type of this token.
@@ -125,6 +127,7 @@ impl Token {
 /// - String parsing (quoted and bare)
 /// - Number parsing
 /// - Identifier and keyword recognition
+#[cfg_attr(feature = "lexer-public", visibility::make(pub))]
 pub(crate) struct Lexer<'a> {
     chars: std::str::Chars<'a>,
     current: Option<char>,

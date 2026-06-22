@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 //! A Rust library for parsing `ferron.conf` configuration files.
 //!
 //! `ferron.conf` is a domain-specific language for Ferron web server configurations.
