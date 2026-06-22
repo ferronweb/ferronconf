@@ -39,6 +39,8 @@ pub(crate) enum TokenKind {
     Comma,
     /// Minus sign `-` (for negative numbers).
     Minus,
+    /// Plus sign `+` (for positive numbers).
+    Plus,
 
     /// Equality operator `==`.
     OpEq,
@@ -63,6 +65,8 @@ pub(crate) enum TokenKind {
 
     /// A comment (skipped during parsing).
     Comment,
+    /// A trailing comment (on the same line as a statement).
+    TrailingComment,
     /// End of file marker.
     #[allow(clippy::upper_case_acronyms)]
     EOF,
@@ -135,6 +139,9 @@ pub(crate) struct Lexer<'a> {
     line: usize,
     column: usize,
     prev_token: Option<TokenKind>,
+    last_non_comment_line: usize,
+    /// Blank line counts collected during lexing, one per token produced.
+    blank_line_counts: Vec<usize>,
 }
 
 impl<'a> Lexer<'a> {
@@ -155,6 +162,8 @@ impl<'a> Lexer<'a> {
             line: 1,
             column: 1,
             prev_token: None,
+            last_non_comment_line: 0,
+            blank_line_counts: Vec::new(),
         }
     }
 
@@ -176,14 +185,30 @@ impl<'a> Lexer<'a> {
         self.next
     }
 
-    fn skip_whitespace(&mut self) -> bool {
+    fn skip_whitespace(&mut self) -> (bool, usize) {
         let mut had_newlines = false;
+        let mut consecutive_newlines = 0;
         while matches!(self.current, Some(c) if c.is_whitespace()) {
-            had_newlines = had_newlines || matches!(self.current, Some('\n') | Some('\r'));
+            if matches!(self.current, Some('\n') | Some('\r')) {
+                had_newlines = true;
+                consecutive_newlines += 1;
+            }
             self.advance();
         }
+        // blank lines = newlines - 1 (e.g., 2 newlines = 1 blank line)
+        let blank_lines = if consecutive_newlines > 1 {
+            consecutive_newlines - 1
+        } else {
+            0
+        };
+        (had_newlines, blank_lines)
+    }
 
-        had_newlines
+    /// Returns the blank line counts collected during lexing.
+    ///
+    /// Each entry corresponds to the token at the same index in the token stream.
+    pub fn into_blank_line_counts(self) -> Vec<usize> {
+        self.blank_line_counts
     }
 
     fn read_identifier(&mut self) -> String {
@@ -257,14 +282,16 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn read_comment(&mut self) {
+    fn read_comment(&mut self) -> String {
+        let mut s = String::new();
         while let Some(c) = self.current {
             if c == '\n' {
                 break;
             }
-
+            s.push(c);
             self.advance();
         }
+        s
     }
 
     fn is_bare_char(c: char) -> bool {
@@ -317,7 +344,8 @@ impl<'a> Lexer<'a> {
     /// The next [`Token`], or `EOF` if at the end of input.
     pub fn next_token(&mut self) -> Token {
         loop {
-            let had_newlines = self.skip_whitespace();
+            let (had_newlines, blank_lines) = self.skip_whitespace();
+            self.blank_line_counts.push(blank_lines);
 
             let span = Span {
                 line: self.line,
@@ -383,8 +411,18 @@ impl<'a> Lexer<'a> {
                 }
 
                 Some('#') => {
-                    self.read_comment();
-                    continue;
+                    let comment_text = self.read_comment();
+                    // Trailing comment: on same line as previous non-comment token,
+                    // and no newlines were crossed between them
+                    let is_trailing = !had_newlines
+                        && self.last_non_comment_line == span.line
+                        && self.prev_token.is_some();
+                    let kind = if is_trailing {
+                        TokenKind::TrailingComment
+                    } else {
+                        TokenKind::Comment
+                    };
+                    return Token::with_lexeme(kind, comment_text, span);
                 }
 
                 Some('=') if self.peek() == Some('=') => {
@@ -420,6 +458,11 @@ impl<'a> Lexer<'a> {
                     Token::bare(TokenKind::Minus, span)
                 }
 
+                Some('+') if self.peek().is_some_and(|p| p.is_ascii_digit()) => {
+                    self.advance();
+                    Token::bare(TokenKind::Plus, span)
+                }
+
                 Some(c) if Self::is_bare_char(c) && self.allow_bare_string() && !had_newlines => {
                     let value = self.read_bare_string();
                     let kind = if value == "true" || value == "false" {
@@ -445,6 +488,7 @@ impl<'a> Lexer<'a> {
             };
 
             self.prev_token = Some(token.kind);
+            self.last_non_comment_line = span.line;
             return token;
         }
     }

@@ -93,7 +93,7 @@ identifier      ::= ALPHA ( ALPHA | DIGIT | '_' | '-' )*
 boolean         ::= 'true'
                   | 'false'
 
-number          ::= '-'? DIGIT+ ( '.' DIGIT+ )?
+number          ::= ( '-' | '+' )? DIGIT+ ( '.' DIGIT+ )?
 
 /* comments are skipped. */
 comment         ::= '#' comment-char*

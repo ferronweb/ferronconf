@@ -47,6 +47,7 @@ impl std::error::Error for ParseError {}
 pub(crate) struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    blank_line_counts: Vec<usize>,
 }
 
 /// Internal enum for tracking parsed number types.
@@ -61,8 +62,13 @@ impl Parser {
     /// # Arguments
     ///
     /// * `tokens` - The token stream from the lexer
-    pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser { tokens, pos: 0 }
+    /// * `blank_line_counts` - Blank line counts from the lexer, one per token
+    pub fn new(tokens: Vec<Token>, blank_line_counts: Vec<usize>) -> Parser {
+        Parser {
+            tokens,
+            pos: 0,
+            blank_line_counts,
+        }
     }
 
     fn peek(&self) -> &Token {
@@ -94,8 +100,37 @@ impl Parser {
         }
     }
 
+    /// Collects standalone comment tokens as `Statement::Comment` nodes.
+    ///
+    /// Returns the collected comment statements. Does not consume `TrailingComment` tokens.
+    fn collect_comment_statements(&mut self) -> Vec<Statement> {
+        let mut comments = Vec::new();
+        while self.peek().kind == TokenKind::Comment {
+            let token = self.advance_owned();
+            let text = token.lexeme.unwrap_or_default();
+            comments.push(Statement::Comment(text, token.span));
+        }
+        comments
+    }
+
+    /// Checks if the next token is a `TrailingComment` and consumes it.
+    ///
+    /// Returns the trailing comment text if present.
+    fn consume_trailing_comment(&mut self) -> Option<String> {
+        if self.peek().kind == TokenKind::TrailingComment {
+            let token = self.advance_owned();
+            token.lexeme
+        } else {
+            None
+        }
+    }
+
     fn check(&self, kind: TokenKind) -> bool {
         self.peek().kind == kind
+    }
+
+    fn blank_lines_before_current(&self) -> usize {
+        self.blank_line_counts.get(self.pos).copied().unwrap_or(0)
     }
 
     fn token_text(token: &Token) -> Result<&str, ParseError> {
@@ -162,6 +197,7 @@ impl Parser {
                 | TokenKind::Boolean
                 | TokenKind::InterpStart
                 | TokenKind::Minus
+                | TokenKind::Plus
         )
     }
 
@@ -305,6 +341,7 @@ impl Parser {
             matcher,
             expr,
             span: start_span,
+            trailing_comment: None,
         })
     }
 
@@ -319,6 +356,7 @@ impl Parser {
             name,
             block,
             span: start_span,
+            trailing_comment: None,
         })
     }
 
@@ -327,9 +365,23 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
 
         let mut statements = Vec::new();
+        let mut trailing_comments = std::collections::HashMap::new();
+        let mut blank_lines_before = std::collections::HashMap::new();
 
         while !self.check(TokenKind::RBrace) {
-            statements.push(self.parse_statement(false)?);
+            let blank = self.blank_lines_before_current();
+            let stmts = self.parse_statement(false)?;
+            for (i, stmt) in stmts.into_iter().enumerate() {
+                let idx = statements.len();
+                if blank > 0 && i == 0 {
+                    blank_lines_before.insert(idx, blank);
+                }
+                // Extract trailing comment before pushing
+                if let Some(tc) = Self::get_trailing_comment(&stmt) {
+                    trailing_comments.insert(idx, tc.to_string());
+                }
+                statements.push(stmt);
+            }
         }
 
         self.expect(TokenKind::RBrace)?;
@@ -337,7 +389,20 @@ impl Parser {
         Ok(Block {
             statements,
             span: start_span,
+            trailing_comments,
+            blank_lines_before,
         })
+    }
+
+    fn get_trailing_comment(stmt: &Statement) -> Option<&str> {
+        match stmt {
+            Statement::Directive(d) => d.trailing_comment.as_deref(),
+            Statement::HostBlock(h) => h.trailing_comment.as_deref(),
+            Statement::MatchBlock(m) => m.trailing_comment.as_deref(),
+            Statement::GlobalBlock(_) => None,
+            Statement::SnippetBlock(s) => s.trailing_comment.as_deref(),
+            Statement::Comment(_, _) => None,
+        }
     }
 
     fn parse_string_with_interpolation(input: &str, span: Span) -> Result<Value, ParseError> {
@@ -455,6 +520,24 @@ impl Parser {
                 }
             }
 
+            TokenKind::Plus => {
+                let token = self.advance_owned();
+                if token.kind != TokenKind::Number {
+                    return Err(ParseError {
+                        message: "Invalid number".into(),
+                        span: token.span,
+                    });
+                }
+                let integer_text = token.lexeme.as_deref().ok_or(ParseError {
+                    message: "Missing token text for Number".into(),
+                    span: token.span,
+                })?;
+                match self.parse_number_literal(integer_text, span, false)? {
+                    ParsedNumber::Integer(integer) => Ok(Value::Integer(integer, span)),
+                    ParsedNumber::Float(number) => Ok(Value::Float(number, span)),
+                }
+            }
+
             TokenKind::Number => {
                 let integer_text = token.lexeme.as_deref().ok_or(ParseError {
                     message: "Missing token text for Number".into(),
@@ -505,6 +588,7 @@ impl Parser {
             args,
             block,
             span,
+            trailing_comment: None,
         })
     }
 
@@ -727,6 +811,7 @@ impl Parser {
             hosts,
             block,
             span: start_span,
+            trailing_comment: None,
         })
     }
 
@@ -809,7 +894,8 @@ impl Parser {
         self.scans_as_host_block()
     }
 
-    /// Parses a single statement at the current position.
+    /// Parses a single statement at the current position, including any
+    /// leading comments and trailing comment.
     ///
     /// # Arguments
     ///
@@ -818,11 +904,29 @@ impl Parser {
     ///
     /// # Returns
     ///
-    /// A [`Statement`] on success, or a [`ParseError`] if parsing fails.
-    fn parse_statement(&mut self, top_level: bool) -> Result<Statement, ParseError> {
-        self.skip_ignorable_tokens(); // Skip comments before parsing a statement
+    /// A vector of [`Statement`]s (leading comments + the statement) on success,
+    /// or a [`ParseError`] if parsing fails. The trailing comment is stored
+    /// in the last statement of the returned vector.
+    fn parse_statement(&mut self, top_level: bool) -> Result<Vec<Statement>, ParseError> {
+        let leading_comments = self.collect_comment_statements();
 
-        match self.peek().kind {
+        // After collecting comments, check what's next
+        if self.check(TokenKind::EOF) {
+            if top_level {
+                return Ok(leading_comments);
+            }
+            // Inside a block, EOF means unclosed block
+            return Err(ParseError {
+                message: "Unexpected end of file, expected '}'".into(),
+                span: self.peek().span,
+            });
+        }
+
+        if self.check(TokenKind::RBrace) {
+            return Ok(leading_comments);
+        }
+
+        let mut stmt = match self.peek().kind {
             TokenKind::Number
             | TokenKind::Star
             | TokenKind::LBracket
@@ -830,24 +934,47 @@ impl Parser {
             | TokenKind::Boolean
                 if top_level && self.looks_like_host() =>
             {
-                Ok(Statement::HostBlock(self.parse_host_block()?))
+                Statement::HostBlock(self.parse_host_block()?)
             }
 
-            TokenKind::Match => Ok(Statement::MatchBlock(self.parse_match_block()?)),
+            TokenKind::Match => Statement::MatchBlock(self.parse_match_block()?),
 
-            TokenKind::Identifier => Ok(Statement::Directive(self.parse_directive()?)),
+            TokenKind::Identifier => Statement::Directive(self.parse_directive()?),
 
-            TokenKind::LBrace => Ok(Statement::GlobalBlock(self.parse_block()?)),
+            TokenKind::LBrace => Statement::GlobalBlock(self.parse_block()?),
 
-            TokenKind::Snippet => Ok(Statement::SnippetBlock(self.parse_snippet_block()?)),
+            TokenKind::Snippet => Statement::SnippetBlock(self.parse_snippet_block()?),
 
-            _ => Err(ParseError {
-                message: format!(
-                    "Unexpected token {:?}, expected 'match', 'identifier', '[', '@', 'number' or '*'",
-                    self.peek().kind
-                ),
-                span: self.peek().span,
-            }),
+            _ => {
+                return Err(ParseError {
+                    message: format!(
+                        "Unexpected token {:?}, expected 'match', 'identifier', '[', '@', 'number' or '*'",
+                        self.peek().kind
+                    ),
+                    span: self.peek().span,
+                });
+            }
+        };
+
+        // Check for trailing comment
+        if let Some(trailing) = self.consume_trailing_comment() {
+            self.set_trailing_comment(&mut stmt, trailing);
+        }
+
+        let mut result = leading_comments;
+        result.push(stmt);
+        Ok(result)
+    }
+
+    /// Sets the trailing comment on a statement.
+    fn set_trailing_comment(&self, stmt: &mut Statement, comment: String) {
+        match stmt {
+            Statement::Directive(d) => d.trailing_comment = Some(comment),
+            Statement::HostBlock(h) => h.trailing_comment = Some(comment),
+            Statement::MatchBlock(m) => m.trailing_comment = Some(comment),
+            Statement::GlobalBlock(_) => {} // Global blocks don't support trailing comments
+            Statement::SnippetBlock(s) => s.trailing_comment = Some(comment),
+            Statement::Comment(_, _) => {}
         }
     }
 
@@ -864,13 +991,35 @@ impl Parser {
     /// if parsing fails.
     pub fn parse_config(&mut self) -> Result<Config, ParseError> {
         let mut statements = Vec::new();
-        self.skip_ignorable_tokens(); // Skip leading comments
+        let mut trailing_comments = std::collections::HashMap::new();
+        let mut blank_lines_before = std::collections::HashMap::new();
 
-        while !self.check(TokenKind::EOF) {
-            self.skip_ignorable_tokens(); // Skip comments between statements
-            statements.push(self.parse_statement(true)?);
+        // Skip leading comments (they become Statement::Comment nodes)
+        let leading = self.collect_comment_statements();
+        for stmt in leading {
+            statements.push(stmt);
         }
 
-        Ok(Config { statements })
+        while !self.check(TokenKind::EOF) {
+            let blank = self.blank_lines_before_current();
+            let stmts = self.parse_statement(true)?;
+            for (i, stmt) in stmts.into_iter().enumerate() {
+                let idx = statements.len();
+                if blank > 0 && i == 0 {
+                    blank_lines_before.insert(idx, blank);
+                }
+                // Extract trailing comment before pushing
+                if let Some(tc) = Self::get_trailing_comment(&stmt) {
+                    trailing_comments.insert(idx, tc.to_string());
+                }
+                statements.push(stmt);
+            }
+        }
+
+        Ok(Config {
+            statements,
+            trailing_comments,
+            blank_lines_before,
+        })
     }
 }

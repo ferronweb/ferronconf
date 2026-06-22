@@ -1,4 +1,4 @@
-# `ferron.conf` file format specification (v1.1)
+# `ferron.conf` file format specification (v1.2)
 
 ## 1. Overview
 
@@ -222,7 +222,7 @@ Strings can be specified as:
 
 Numbers support integers and decimals:
 ```ebnf
-number ::= '-'? DIGIT+ ( '.' DIGIT+ )?
+number ::= ( '-' | '+' )? DIGIT+ ( '.' DIGIT+ )?
 ```
 
 **Examples:** `80`, `443`, `1.5`, `-10`
@@ -281,7 +281,7 @@ Unresolved variables are left as `{{name}}` in the output.
     default_https_port 443
 
     admin {
-        listen 127.0.0.1:8081
+        listen "127.0.0.1:8081"
         health true
         status true
     }

@@ -446,7 +446,9 @@ fn test_error_empty_input() {
 fn test_error_only_comments() {
     let input = "# just a comment\n# another comment\n";
     let config = Config::from_str(input).expect("only-comments should parse");
-    assert_eq!(config.statements.len(), 0);
+    // Comments are now preserved as Statement::Comment nodes
+    assert_eq!(config.statements.len(), 2);
+    assert!(config.statements.iter().all(|s| s.is_comment()));
 }
 
 #[test]
@@ -1208,7 +1210,9 @@ fn test_edge_comment_without_trailing_newline() {
 fn test_edge_multiple_consecutive_comments() {
     let input = "# a\n# b\n# c\n";
     let config = Config::from_str(input).expect("consecutive comments should parse");
-    assert_eq!(config.statements.len(), 0);
+    // Comments are now preserved as Statement::Comment nodes
+    assert_eq!(config.statements.len(), 3);
+    assert!(config.statements.iter().all(|s| s.is_comment()));
 }
 
 #[test]
@@ -1358,7 +1362,11 @@ interp_val "{{app.root}}"
 
 #[test]
 fn test_display_empty_config() {
-    let config = Config { statements: vec![] };
+    let config = Config {
+        statements: vec![],
+        trailing_comments: std::collections::HashMap::new(),
+        blank_lines_before: std::collections::HashMap::new(),
+    };
     let formatted = config.to_string();
     assert_eq!(formatted, "");
 }

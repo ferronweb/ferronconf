@@ -44,6 +44,15 @@ use std::str::FromStr;
 pub struct Config {
     /// The top-level statements in the configuration file.
     pub statements: Vec<Statement>,
+    /// Trailing comments for statements, keyed by statement index.
+    ///
+    /// A trailing comment is a `# comment` that appears on the same line
+    /// as a statement, after the statement's content.
+    pub trailing_comments: std::collections::HashMap<usize, String>,
+    /// Number of leading blank lines before each statement, keyed by statement index.
+    ///
+    /// This is used to preserve intentional blank line grouping in the original source.
+    pub blank_lines_before: std::collections::HashMap<usize, usize>,
 }
 
 impl Config {
@@ -144,8 +153,10 @@ impl FromStr for Config {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lexer = Lexer::new(s);
-        let mut parser = Parser::new(lexer.collect());
+        let mut lexer = Lexer::new(s);
+        let tokens: Vec<_> = lexer.by_ref().collect();
+        let blank_line_counts = lexer.into_blank_line_counts();
+        let mut parser = Parser::new(tokens, blank_line_counts);
         parser.parse_config()
     }
 }
@@ -153,7 +164,7 @@ impl FromStr for Config {
 /// A statement in the configuration file.
 ///
 /// Statements are the top-level building blocks of a `ferron.conf` file.
-/// There are five types of statements, each serving a different purpose.
+/// There are six types of statements, each serving a different purpose.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     /// A key-value directive with optional arguments and nested block.
@@ -166,6 +177,8 @@ pub enum Statement {
     GlobalBlock(Block),
     /// A reusable configuration snippet definition.
     SnippetBlock(SnippetBlock),
+    /// A standalone comment line.
+    Comment(String, Span),
 }
 
 impl Statement {
@@ -179,6 +192,7 @@ impl Statement {
             Statement::MatchBlock(m) => m.span,
             Statement::GlobalBlock(g) => g.span,
             Statement::SnippetBlock(s) => s.span,
+            Statement::Comment(_, span) => *span,
         }
     }
 
@@ -206,6 +220,19 @@ impl Statement {
     pub fn is_snippet_block(&self) -> bool {
         matches!(self, Statement::SnippetBlock(_))
     }
+
+    /// Returns `true` if this statement is a standalone comment.
+    pub fn is_comment(&self) -> bool {
+        matches!(self, Statement::Comment(_, _))
+    }
+
+    /// Returns the trailing comment text if this statement has one.
+    ///
+    /// Trailing comments are stored in the `Config`'s `trailing_comments` map.
+    /// This method is a convenience for the common case.
+    pub fn trailing_comment(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// A configuration directive with a name, optional arguments, and an optional nested block.
@@ -231,6 +258,8 @@ pub struct Directive {
     pub block: Option<Block>,
     /// The source span of the directive.
     pub span: Span,
+    /// An optional trailing comment on the same line as this directive.
+    pub trailing_comment: Option<String>,
 }
 
 impl Directive {
@@ -329,6 +358,8 @@ pub struct MatchBlock {
     pub expr: Vec<MatcherExpression>,
     /// The source span of the match block.
     pub span: Span,
+    /// An optional trailing comment on the same line as this match block.
+    pub trailing_comment: Option<String>,
 }
 
 impl MatchBlock {
@@ -367,6 +398,8 @@ pub struct HostBlock {
     pub block: Block,
     /// The source span of the host block.
     pub span: Span,
+    /// An optional trailing comment on the same line as this host block.
+    pub trailing_comment: Option<String>,
 }
 
 impl HostBlock {
@@ -414,6 +447,8 @@ pub struct SnippetBlock {
     pub block: Block,
     /// The source span of the snippet block.
     pub span: Span,
+    /// An optional trailing comment on the same line as this snippet block.
+    pub trailing_comment: Option<String>,
 }
 
 /// A block of nested statements enclosed in braces.
@@ -425,6 +460,10 @@ pub struct Block {
     pub statements: Vec<Statement>,
     /// The source span of the block (position of the opening `{`).
     pub span: Span,
+    /// Trailing comments for statements inside this block, keyed by statement index.
+    pub trailing_comments: std::collections::HashMap<usize, String>,
+    /// Number of leading blank lines before each statement inside this block, keyed by statement index.
+    pub blank_lines_before: std::collections::HashMap<usize, usize>,
 }
 
 impl Block {

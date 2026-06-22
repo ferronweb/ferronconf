@@ -41,6 +41,7 @@ impl fmt::Display for Statement {
             Statement::MatchBlock(m) => write!(f, "{}", m),
             Statement::GlobalBlock(g) => write!(f, "{{\n{}}}", g),
             Statement::SnippetBlock(s) => write!(f, "{}", s),
+            Statement::Comment(text, _) => write!(f, "# {}", text),
         }
     }
 }
@@ -54,6 +55,9 @@ impl fmt::Display for Directive {
         if let Some(block) = &self.block {
             write!(f, " {{\n{}}}", block)?;
         }
+        if let Some(comment) = &self.trailing_comment {
+            write!(f, " {}", comment)?;
+        }
         Ok(())
     }
 }
@@ -66,7 +70,11 @@ impl fmt::Display for HostBlock {
             }
             write!(f, "{}", host)?;
         }
-        write!(f, " {{\n{}}}", self.block)
+        write!(f, " {{\n{}}}", self.block)?;
+        if let Some(comment) = &self.trailing_comment {
+            write!(f, " {}", comment)?;
+        }
+        Ok(())
     }
 }
 
@@ -79,13 +87,21 @@ impl fmt::Display for MatchBlock {
         for expr in &self.expr {
             writeln!(indented, "{}", expr)?;
         }
-        write!(f, "}}")
+        write!(f, "}}")?;
+        if let Some(comment) = &self.trailing_comment {
+            write!(f, " {}", comment)?;
+        }
+        Ok(())
     }
 }
 
 impl fmt::Display for SnippetBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "snippet {} {}", self.name, self.block)
+        write!(f, "snippet {} {}", self.name, self.block)?;
+        if let Some(comment) = &self.trailing_comment {
+            write!(f, " {}", comment)?;
+        }
+        Ok(())
     }
 }
 
