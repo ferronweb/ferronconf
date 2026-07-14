@@ -48,6 +48,11 @@ example.com {
   reverse_proxy localhost:9000
 }
 
+# Wildcard host
+*:8443 {
+  root /var/www/wildcard
+}
+
 # TCP service
 tcp *:5432 {
   proxy localhost:5432
@@ -222,6 +227,18 @@ tcp *:5432 {
         .find_directive("proxy")
         .expect("proxy directive not found");
     assert_eq!(proxy.get_string_arg(0), Some("localhost:5432"));
+
+    // 8. Check "*:8443" block
+    let has_wildcard = config.statements.iter().any(|s| {
+        if let Statement::HostBlock(hb) = s {
+            hb.hosts
+                .iter()
+                .any(|h| h.labels == HostLabels::Wildcard && h.port == Some(8443))
+        } else {
+            false
+        }
+    });
+    assert!(has_wildcard, "wildcard host block not found");
 }
 
 #[allow(clippy::approx_constant)]

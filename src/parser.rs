@@ -834,7 +834,7 @@ impl Parser {
                                 .peek()
                                 .lexeme
                                 .as_deref()
-                                .is_some_and(|l| !l.starts_with('.'))
+                                .is_some_and(|l| !l.starts_with('.') && !l.starts_with(':'))
                         {
                             protocol = Some(labels.pop().ok_or_else(|| ParseError {
                                 message: "Invalid host label".into(),
@@ -863,7 +863,7 @@ impl Parser {
                             .peek()
                             .lexeme
                             .as_deref()
-                            .is_some_and(|l| l.starts_with('.'));
+                            .is_some_and(|l| l.starts_with('.') || l.starts_with(':'));
                     if !is_host_continuation {
                         protocol = Some(labels.pop().ok_or_else(|| ParseError {
                             message: "Invalid host label".into(),
