@@ -16,6 +16,8 @@ pub(crate) enum TokenKind {
     Number,
     /// A double-quoted string (e.g., `"hello world"`).
     StringQuoted,
+    /// A raw double-quoted string (e.g., `r"^/api/v1$"`) — no escape processing.
+    StringRaw,
     /// A bare (unquoted) string (e.g., `example.com`).
     StringBare,
     /// A boolean literal (`true` or `false`).
@@ -248,7 +250,7 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn read_string(&mut self) -> String {
+    fn read_string(&mut self) -> Result<String, String> {
         let mut s = String::new();
 
         self.advance(); // skip opening "
@@ -259,19 +261,48 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '\\' {
+                let escape_start = (self.line, self.column);
                 self.advance();
-                if let Some(escaped) = self.current {
-                    match escaped {
-                        'n' => s.push('\n'), // newline
-                        'r' => s.push('\r'), // carriage return
-                        't' => s.push('\t'), // tab
-                        _ => s.push(escaped),
+                match self.current {
+                    Some('n') => s.push('\n'),
+                    Some('r') => s.push('\r'),
+                    Some('t') => s.push('\t'),
+                    Some('\\') => s.push('\\'),
+                    Some('"') => s.push('"'),
+                    Some(other) => {
+                        return Err(format!(
+                            "Invalid escape sequence \\{} at line {}, column {}",
+                            other, escape_start.0, escape_start.1
+                        ))
+                    }
+                    None => {
+                        return Err(format!(
+                            "Invalid escape sequence at end of file (line {}, column {})",
+                            escape_start.0, escape_start.1
+                        ))
                     }
                 }
             } else {
                 s.push(c);
             }
 
+            self.advance();
+        }
+
+        self.advance(); // closing "
+        Ok(s)
+    }
+
+    fn read_raw_string(&mut self) -> String {
+        let mut s = String::new();
+
+        self.advance(); // skip opening "
+
+        while let Some(c) = self.current {
+            if c == '"' {
+                break;
+            }
+            s.push(c);
             self.advance();
         }
 
@@ -320,6 +351,7 @@ impl<'a> Lexer<'a> {
             Some(TokenKind::Identifier)
                 | Some(TokenKind::Number)
                 | Some(TokenKind::StringQuoted)
+                | Some(TokenKind::StringRaw)
                 | Some(TokenKind::StringBare)
                 | Some(TokenKind::Boolean)
                 | Some(TokenKind::OpRegex)
@@ -341,7 +373,7 @@ impl<'a> Lexer<'a> {
     /// # Returns
     ///
     /// The next [`Token`], or `EOF` if at the end of input.
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Result<Token, String> {
         loop {
             let (had_newlines, had_whitespace, blank_lines) = self.skip_whitespace();
             self.blank_line_counts.push(blank_lines);
@@ -355,49 +387,53 @@ impl<'a> Lexer<'a> {
                 Some('{') if self.peek() == Some('{') => {
                     self.advance();
                     self.advance();
-                    Token::bare(TokenKind::InterpStart, span)
+                    Ok::<_, String>(Token::bare(TokenKind::InterpStart, span))
                 }
 
                 Some('}') if self.peek() == Some('}') => {
                     self.advance();
                     self.advance();
-                    Token::bare(TokenKind::InterpEnd, span)
+                    Ok(Token::bare(TokenKind::InterpEnd, span))
                 }
 
                 Some('{') => {
                     self.advance();
-                    Token::bare(TokenKind::LBrace, span)
+                    Ok(Token::bare(TokenKind::LBrace, span))
                 }
 
                 Some('}') => {
                     self.advance();
-                    Token::bare(TokenKind::RBrace, span)
+                    Ok(Token::bare(TokenKind::RBrace, span))
                 }
 
                 Some('[') => {
                     self.advance();
-                    Token::bare(TokenKind::LBracket, span)
+                    Ok(Token::bare(TokenKind::LBracket, span))
                 }
 
                 Some(']') => {
                     self.advance();
-                    Token::bare(TokenKind::RBracket, span)
+                    Ok(Token::bare(TokenKind::RBracket, span))
                 }
 
                 Some(';') => {
                     self.advance();
-                    Token::bare(TokenKind::Semicolon, span)
+                    Ok(Token::bare(TokenKind::Semicolon, span))
+                }
+
+                Some('r') if self.peek() == Some('"') => {
+                    self.advance(); // skip 'r', now at '"'
+                    let value = self.read_raw_string();
+                    Ok(Token::with_lexeme(TokenKind::StringRaw, value, span))
                 }
 
                 Some('"') => {
-                    let value = self.read_string();
-                    Token::with_lexeme(TokenKind::StringQuoted, value, span)
+                    let value = self.read_string()?;
+                    Ok(Token::with_lexeme(TokenKind::StringQuoted, value, span))
                 }
 
                 Some('#') => {
                     let comment_text = self.read_comment();
-                    // Trailing comment: on same line as previous non-comment token,
-                    // and no newlines were crossed between them
                     let is_trailing = !had_newlines
                         && self.last_non_comment_line == span.line
                         && self.prev_token.is_some();
@@ -408,52 +444,52 @@ impl<'a> Lexer<'a> {
                     };
                     let mut t = Token::with_lexeme(kind, comment_text, span);
                     t.had_whitespace = had_whitespace;
-                    return t;
+                    return Ok(t);
                 }
 
                 Some('=') if self.peek() == Some('=') => {
                     self.advance();
                     self.advance();
-                    Token::bare(TokenKind::OpEq, span)
+                    Ok(Token::bare(TokenKind::OpEq, span))
                 }
 
                 Some('!') if self.peek() == Some('=') => {
                     self.advance();
                     self.advance();
-                    Token::bare(TokenKind::OpNeq, span)
+                    Ok(Token::bare(TokenKind::OpNeq, span))
                 }
 
                 Some('~') => {
                     self.advance();
-                    Token::bare(TokenKind::OpRegex, span)
+                    Ok(Token::bare(TokenKind::OpRegex, span))
                 }
 
                 Some('!') if self.peek() == Some('~') => {
                     self.advance();
                     self.advance();
-                    Token::bare(TokenKind::OpNotRegex, span)
+                    Ok(Token::bare(TokenKind::OpNotRegex, span))
                 }
 
                 Some(c) if c.is_ascii_digit() => {
                     let n = self.read_number();
-                    Token::with_lexeme(TokenKind::Number, n, span)
+                    Ok(Token::with_lexeme(TokenKind::Number, n, span))
                 }
 
                 Some('-') if self.peek().is_some_and(|p| p.is_ascii_digit()) => {
                     self.advance();
                     let n = self.read_number();
-                    Token::with_lexeme(TokenKind::Number, format!("-{n}"), span)
+                    Ok(Token::with_lexeme(TokenKind::Number, format!("-{n}"), span))
                 }
 
                 Some('+') if self.peek().is_some_and(|p| p.is_ascii_digit()) => {
                     self.advance();
                     let n = self.read_number();
-                    Token::with_lexeme(TokenKind::Number, n, span)
+                    Ok(Token::with_lexeme(TokenKind::Number, n, span))
                 }
 
                 Some('*') if !self.allow_bare_string() || had_newlines => {
                     self.advance();
-                    Token::with_lexeme(TokenKind::StringBare, "*".to_string(), span)
+                    Ok(Token::with_lexeme(TokenKind::StringBare, "*".to_string(), span))
                 }
 
                 Some(c)
@@ -467,28 +503,45 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::StringBare
                     };
-                    Token::with_lexeme(kind, value, span)
+                    Ok(Token::with_lexeme(kind, value, span))
                 }
 
                 Some(c) if c.is_alphabetic() => {
                     let id = self.read_identifier();
                     let kind = self.identifier_token(&id);
-                    Token::with_lexeme(kind, id, span)
+                    Ok(Token::with_lexeme(kind, id, span))
                 }
 
-                None => Token::bare(TokenKind::EOF, span),
+                None => Ok(Token::bare(TokenKind::EOF, span)),
 
                 _ => {
                     self.advance();
                     continue;
                 }
-            };
+            }?;
 
             token.had_whitespace = had_whitespace;
             self.prev_token = Some(token.kind);
             self.last_non_comment_line = span.line;
-            return token;
+            return Ok(token);
         }
+    }
+}
+
+impl Lexer<'_> {
+    /// Returns the next token in the input.
+    ///
+    /// Returns `None` after EOF has been returned once.
+    /// Returns `Err` on lexer errors (e.g., invalid escape sequences).
+    pub fn next_or_error(&mut self) -> Result<Option<Token>, String> {
+        if self
+            .prev_token
+            .as_ref()
+            .is_some_and(|k| *k == TokenKind::EOF)
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.next_token()?))
     }
 }
 
@@ -498,16 +551,9 @@ impl Iterator for Lexer<'_> {
     /// Returns the next token in the input.
     ///
     /// Returns `None` after EOF has been returned once.
+    /// Panics on lexer errors (use `next_or_error` for fallible iteration).
     fn next(&mut self) -> Option<Self::Item> {
-        if self
-            .prev_token
-            .as_ref()
-            .is_some_and(|k| *k == TokenKind::EOF)
-        {
-            // There was an EOF token already, so we don't need to return another one.
-            return None;
-        }
-
-        Some(self.next_token())
+        self.next_or_error()
+            .expect("lexer error during non-fallible iteration")
     }
 }

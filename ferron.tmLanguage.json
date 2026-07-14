@@ -33,9 +33,16 @@
 
     "string": {
       "patterns": [
+        { "include": "#raw-string" },
         { "include": "#quoted-string" },
         { "include": "#bare-string" }
       ]
+    },
+
+    "raw-string": {
+      "name": "string.quoted.raw.ferron",
+      "begin": "r\"",
+      "end": "\""
     },
 
     "quoted-string": {

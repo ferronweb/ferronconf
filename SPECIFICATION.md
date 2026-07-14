@@ -13,7 +13,7 @@ This specification defines the formal syntax of the format based on its EBNF gra
 The configuration file is encoded in UTF-8 and contains:
 - **Alphabetic characters** - `A-Z`, `a-z`
 - **Numeric digits** - `0-9`
-- **Special symbols** - `{ } [ ] : . * , - = ! ~ / + _ " \ # % & ? @`
+- **Special symbols** - `{ } [ ] : . * , - = ! ~ / + _ " \ # % & ? @ ;`
 
 ### 2.2 Whitespace and comments
 
@@ -27,6 +27,7 @@ The configuration file is encoded in UTF-8 and contains:
 | `Identifier` | Alphanumeric sequence starting with a letter | `server_name`, `max_connections` |
 | `Number` | Integer or decimal value (sign absorbed from `-`/`+` before digit) | `80`, `443`, `1.5`, `-10` |
 | `StringQuoted` | Double-quoted string (supports escapes) | `"example.com"`, `"path/to/file"` |
+| `StringRaw` | Raw double-quoted string (no escape processing, for regex) | `r"^/api/v1$"`, `r"\n"` |
 | `StringBare` | Unquoted string of non-whitespace, non-structural characters | `localhost`, `index.html`, `*` |
 | `Boolean` | Literal values `true` or `false` | `true`, `false` |
 | `Interpolation` | Variable interpolation syntax | `${variable}`, `{{path.to.value}}` |
@@ -201,7 +202,7 @@ match english_language {
 | `==` | String equality | `request.method == "GET"` |
 | `!=` | String inequality | `request.scheme != "https"` |
 | `~` | Regex match | `request.header.user-agent ~ "Chrome.*"` |
-| `!~` | Negated regex | `request.header.host !~ "^test\."` |
+| `!~` | Negated regex | `request.header.host !~ "^test\\."` |
 | `in` | Membership / language match | `request.method in "GET,POST"` |
 
 ## 5. Data types
@@ -209,10 +210,11 @@ match english_language {
 ### 5.1 Strings
 
 Strings can be specified as:
-- **Quoted strings** - enclosed in double quotes, support escape sequences (`\n`, `\r`, `\t`, `\\`)
+- **Quoted strings** - enclosed in double quotes, support escape sequences (`\n`, `\r`, `\t`, `\\`, `\"`). Invalid escape sequences (e.g., `\z`, `\$`) are a parse error.
+- **Raw strings** - prefixed with `r`, enclosed in double quotes. No escape processing — all characters are literal. Useful for regex patterns (e.g., `r"^/api/v1(?:/|$)"`).
 - **Bare strings** - unquoted sequences of any characters except whitespace, `{`, `}`, `"`, `#`, `,`, and `;`. Including characters like `.`, `:`, `*`, `/`, `[`, and `]` directly. Note that `[`/`]` brackets are structural at line start for IPv6 host patterns, but part of bare strings in directive arguments.
 
-**Escape sequences:**
+**Escape sequences (quoted strings only):**
 | Escape | Character |
 |--------|-----------|
 | `\n` | newline |
@@ -220,6 +222,8 @@ Strings can be specified as:
 | `\t` | tab |
 | `\\` | backslash |
 | `\"` | double quote |
+
+Other escape sequences (e.g., `\z`, `\$`, `\x41`) are **invalid** and produce a parse error. Use a raw string (`r"..."`) if you need literal backslashes.
 
 ### 5.2 Numbers
 
@@ -397,7 +401,7 @@ The reference parser reports errors with:
 
 ### 9.1 Lexer behavior
 
-- Bare strings are only allowed after certain token types (identifiers, numbers, quoted strings, operators) to avoid ambiguity.
+- Bare strings are only allowed after certain token types (identifiers, numbers, quoted strings, raw strings, operators) to avoid ambiguity.
 - The lexer is case-sensitive for keywords (`match`, `snippet`) and boolean values.
 - Characters `.`, `:`, `*`, `-`, `+`, `/`, `%`, `&`, `?`, `@` are absorbed into bare strings or numbers; they no longer have dedicated tokens.
 - The `*` wildcard in host patterns produces a `StringBare("*")` token.
@@ -405,17 +409,20 @@ The reference parser reports errors with:
 - IPv6 addresses use `[`/`]` as bracket tokens; `:8080` after `]` is parsed as a `Number` token for the port.
 - `[` and `]` are structural at line start (for IPv6 host patterns) but part of bare strings in directive arguments.
 - Each token records a `had_whitespace` flag indicating whether whitespace preceded it. This is used by the parser for adjacency validation.
+- Invalid escape sequences in quoted strings (e.g., `\z`, `\$`) are a lexer error.
+- Raw strings (`r"..."`) are tokenized as `StringRaw` tokens with the content between the quotes taken literally — no escape processing.
 
 ### 9.2 Parser behavior
 
 - Host patterns can be comma-separated in host blocks.
 - `;` is an optional delimiter that can appear between statements (at top level or inside blocks) and also between host patterns.  
-- Interpolation syntax uses double braces `{{ }}`.
+- Interpolation syntax uses double braces `{{ }}`. Raw strings (`r"..."`) do **not** support interpolation — `{{...}}` inside a raw string is literal text.
 - Match expressions are evaluated sequentially within a match block.
 - Host pattern protocol detection uses lookahead: if a single label precedes a non-dotted bare string, it becomes the protocol.
 - Dotted paths in identifiers and interpolation split on `.` to produce path segments.
 - Number literals that include a `.` are split into a `Number` token and a `StringBare` continuation (e.g., `3.14` → `Number("3")` + `StringBare(".14")`).
 - A `Number` token immediately followed by `[` without whitespace is rejected as an error (e.g., `34[::1]34`), preventing silent token jamming.
+- Two value tokens adjacent without whitespace are rejected as an error (e.g., `"a""a"`, `80-443`).
 
 ## 10. Backward compatibility
 

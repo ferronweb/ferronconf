@@ -154,7 +154,19 @@ impl FromStr for Config {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut lexer = Lexer::new(s);
-        let tokens: Vec<_> = lexer.by_ref().collect();
+        let mut tokens = Vec::new();
+        loop {
+            match lexer.next_or_error() {
+                Ok(Some(token)) => tokens.push(token),
+                Ok(None) => break,
+                Err(e) => {
+                    return Err(crate::parser::ParseError {
+                        message: e,
+                        span: crate::lexer::Span { line: 0, column: 0 },
+                    })
+                }
+            }
+        }
         let blank_line_counts = lexer.into_blank_line_counts();
         let mut parser = Parser::new(tokens, blank_line_counts);
         parser.parse_config()

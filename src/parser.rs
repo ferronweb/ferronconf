@@ -213,6 +213,7 @@ impl Parser {
             self.peek().kind,
             TokenKind::StringBare
                 | TokenKind::StringQuoted
+                | TokenKind::StringRaw
                 | TokenKind::Number
                 | TokenKind::Boolean
                 | TokenKind::InterpStart
@@ -296,7 +297,7 @@ impl Parser {
                 Ok(Operand::Identifier(group, span))
             }
 
-            TokenKind::StringBare | TokenKind::StringQuoted => Ok(Operand::String(
+            TokenKind::StringBare | TokenKind::StringQuoted | TokenKind::StringRaw => Ok(Operand::String(
                 token.lexeme.ok_or(ParseError {
                     message: format!("Missing token text for {:?}", token.kind),
                     span,
@@ -484,12 +485,16 @@ impl Parser {
         let span = token.span;
 
         match token.kind {
-            TokenKind::StringBare | TokenKind::StringQuoted => {
+            TokenKind::StringBare | TokenKind::StringQuoted | TokenKind::StringRaw => {
                 let text = token.lexeme.as_deref().ok_or(ParseError {
                     message: format!("Missing token text for {:?}", token.kind),
                     span,
                 })?;
-                let mut value = Self::parse_string_with_interpolation(text, token.span)?;
+                let mut value = if token.kind == TokenKind::StringRaw {
+                    Value::String(text.to_string(), token.span)
+                } else {
+                    Self::parse_string_with_interpolation(text, token.span)?
+                };
 
                 // Check for bracket continuation (e.g., http://[::1]:8080/path)
                 if self.check(TokenKind::LBracket) {
@@ -734,7 +739,8 @@ impl Parser {
                 | TokenKind::Number
                 | TokenKind::Match
                 | TokenKind::Snippet
-                | TokenKind::Boolean => {
+                | TokenKind::Boolean
+                | TokenKind::StringRaw => {
                     labels.push(token.lexeme.ok_or(ParseError {
                         message: format!("Missing token text for {:?}", token.kind),
                         span: token.span,
@@ -1014,11 +1020,13 @@ impl Parser {
                     | TokenKind::Boolean
                     | TokenKind::Number
                     | TokenKind::StringBare
+                    | TokenKind::StringRaw
                     | TokenKind::RBracket => {
                         match token.kind {
                             TokenKind::LBracket
                             | TokenKind::LBrace
                             | TokenKind::StringBare
+                            | TokenKind::StringRaw
                             | TokenKind::Number
                             | TokenKind::Identifier
                             | TokenKind::Boolean => {}

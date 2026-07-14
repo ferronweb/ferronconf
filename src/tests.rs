@@ -1728,3 +1728,91 @@ fn test_jammed_values_with_whitespace_ok() {
     assert_eq!(d.get_string_arg(3), Some("g"));
     assert_eq!(d.get_boolean_arg(4), Some(true));
 }
+
+#[test]
+fn test_invalid_escape_sequence_errors() {
+    let input = r#"directive "\z""#;
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for invalid escape sequence \\z");
+}
+
+#[test]
+fn test_invalid_escape_sequence_hex_errors() {
+    let input = r#"directive "\x41""#;
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for invalid escape sequence \\x");
+}
+
+#[test]
+fn test_valid_escape_sequences_ok() {
+    let input = r#"directive "\n\r\t\\""#;
+    let config = Config::from_str(input).expect("valid escapes should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("\n\r\t\\"));
+}
+
+#[test]
+fn test_escaped_quote_ok() {
+    let input = r#"directive "hello \"world\"""#;
+    let config = Config::from_str(input).expect("escaped quotes should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("hello \"world\""));
+}
+
+#[test]
+fn test_raw_string_basic() {
+    let input = r#"directive r"^/api/v1(?:/|$)""#;
+    let config = Config::from_str(input).expect("raw string should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("^/api/v1(?:/|$)"));
+}
+
+#[test]
+fn test_raw_string_backslash_literal() {
+    // In raw strings, backslash is literal — no escape processing.
+    let input = r#"directive r"\n\r\t""#;
+    let config = Config::from_str(input).expect("raw string should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("\\n\\r\\t"));
+}
+
+#[test]
+fn test_raw_string_empty() {
+    let input = r#"directive r""#;
+    let config = Config::from_str(input).expect("empty raw string should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some(""));
+}
+
+#[test]
+fn test_raw_string_in_match_expression() {
+    let input = r#"
+match api_route {
+    request.uri.path ~ r"^/api/v1(?:/|$)"
+}
+"#;
+    let config = Config::from_str(input).expect("raw string in match should parse");
+    let mb = config.find_match_blocks()[0];
+    if let Operand::String(s, _) = &mb.expr[0].right {
+        assert_eq!(s, "^/api/v1(?:/|$)");
+    } else {
+        panic!("Expected string operand");
+    }
+}
+
+#[test]
+fn test_raw_string_not_interpolated() {
+    // Raw strings should NOT process {{interpolation}}.
+    let input = r#"directive r"{{env.HOST}}""#;
+    let config = Config::from_str(input).expect("raw string should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("{{env.HOST}}"));
+}
+
+#[test]
+fn test_escaped_dollar_in_quoted_string() {
+    // `\z` is now invalid, but `\\` is valid. Check `\$` errors.
+    let input = r#"directive "\$""#;
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for invalid escape \\$");
+}

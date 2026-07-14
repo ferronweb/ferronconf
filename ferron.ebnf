@@ -69,12 +69,17 @@ ipv6-hex         ::= ( DIGIT | [A-Fa-f] )*
 port            ::= DIGIT+
 
 string          ::= quoted-string
+                  | raw-string
                   | bare-string
 
 quoted-string   ::= '"' quoted-char* '"'
 
 quoted-char     ::= [^"\\]
                   | '\\' .
+
+raw-string      ::= 'r' '"' raw-char* '"'
+
+raw-char        ::= [^"]
 
 bare-string     ::= bare-char+
 
