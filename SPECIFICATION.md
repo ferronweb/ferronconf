@@ -30,13 +30,14 @@ The configuration file is encoded in UTF-8 and contains:
 | `StringBare` | Unquoted string of non-whitespace, non-structural characters | `localhost`, `index.html`, `*` |
 | `Boolean` | Literal values `true` or `false` | `true`, `false` |
 | `Interpolation` | Variable interpolation syntax | `${variable}`, `{{path.to.value}}` |
+| `Semicolon` | Optional statement delimiter | `;` |
 
 ## 3. Syntax grammar
 
 ### 3.1 Top-level structure
 
 ```ebnf
-config          ::= statement* EOF
+config          ::= ( ';' | statement )* EOF
 
 statement       ::= directive
                   | host-block
@@ -45,7 +46,7 @@ statement       ::= directive
                   | snippet-block
 ```
 
-A configuration file consists of zero or more statements at the top level.
+A configuration file consists of zero or more statements at the top level. Semicolons (`;`) may appear between statements as optional delimiters.
 
 ## 4. Statement types
 
@@ -114,6 +115,7 @@ http api.example.com {
 - The `*` wildcard matches any hostname or host label.
 - IPv6 addresses must be enclosed in square brackets.
 - Commas between host patterns are lexer-transparent (they are stripped by the lexer, not tokenized).
+- Semicolons (`;`) may also appear between host patterns as optional delimiters.
 
 ### 4.3 Global blocks
 
@@ -208,7 +210,7 @@ match english_language {
 
 Strings can be specified as:
 - **Quoted strings** - enclosed in double quotes, support escape sequences (`\n`, `\r`, `\t`, `\\`)
-- **Bare strings** - unquoted sequences of any characters except whitespace, `{`, `}`, `"`, `#`, and `,`. Including characters like `.`, `:`, `*`, `/`, `[`, and `]` directly. Note that `[`/`]` brackets are structural at line start for IPv6 host patterns, but part of bare strings in directive arguments.
+- **Bare strings** - unquoted sequences of any characters except whitespace, `{`, `}`, `"`, `#`, `,`, and `;`. Including characters like `.`, `:`, `*`, `/`, `[`, and `]` directly. Note that `[`/`]` brackets are structural at line start for IPv6 host patterns, but part of bare strings in directive arguments.
 
 **Escape sequences:**
 | Escape | Character |
@@ -399,18 +401,21 @@ The reference parser reports errors with:
 - The lexer is case-sensitive for keywords (`match`, `snippet`) and boolean values.
 - Characters `.`, `:`, `*`, `-`, `+`, `/`, `%`, `&`, `?`, `@` are absorbed into bare strings or numbers; they no longer have dedicated tokens.
 - The `*` wildcard in host patterns produces a `StringBare("*")` token.
-- Commas (`,`) between host patterns are discarded by the lexer.
+- Commas (`,`) and semicolons (`;`) between tokens are discarded by the lexer.
 - IPv6 addresses use `[`/`]` as bracket tokens; `:8080` after `]` is parsed as a `Number` token for the port.
 - `[` and `]` are structural at line start (for IPv6 host patterns) but part of bare strings in directive arguments.
+- Each token records a `had_whitespace` flag indicating whether whitespace preceded it. This is used by the parser for adjacency validation.
 
 ### 9.2 Parser behavior
 
 - Host patterns can be comma-separated in host blocks.
+- `;` is an optional delimiter that can appear between statements (at top level or inside blocks) and also between host patterns.  
 - Interpolation syntax uses double braces `{{ }}`.
 - Match expressions are evaluated sequentially within a match block.
 - Host pattern protocol detection uses lookahead: if a single label precedes a non-dotted bare string, it becomes the protocol.
 - Dotted paths in identifiers and interpolation split on `.` to produce path segments.
 - Number literals that include a `.` are split into a `Number` token and a `StringBare` continuation (e.g., `3.14` → `Number("3")` + `StringBare(".14")`).
+- A `Number` token immediately followed by `[` without whitespace is rejected as an error (e.g., `34[::1]34`), preventing silent token jamming.
 
 ## 10. Backward compatibility
 

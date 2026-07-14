@@ -7,7 +7,8 @@
     { "include": "#snippet-block" },
     { "include": "#host-block" },
     { "include": "#global-block" },
-    { "include": "#directive" }
+    { "include": "#directive" },
+    { "include": "#semicolon" }
   ],
   "repository": {
     "comment": {
@@ -54,7 +55,7 @@
 
     "bare-string": {
       "name": "string.unquoted.ferron",
-      "match": "[^\\s{}#\",]+"
+      "match": "[^\\s{}#\",;]+"
     },
 
     "interpolation": {
@@ -79,13 +80,14 @@
       "beginCaptures": {
         "1": { "name": "entity.name.directive.ferron" }
       },
-      "end": "(?=\\{(?!\\{)|$)",
+      "end": "(?=\\{(?!\\{)|$|;)",
       "patterns": [
         { "include": "#comment" },
         { "include": "#number" },
         { "include": "#boolean" },
         { "include": "#string" },
-        { "include": "#interpolation" }
+        { "include": "#interpolation" },
+        { "include": "#semicolon" }
       ]
     },
 
@@ -104,7 +106,8 @@
         { "include": "#directive" },
         { "include": "#match-block" },
         { "include": "#snippet-block" },
-        { "include": "#block" }
+        { "include": "#block" },
+        { "include": "#semicolon" }
       ]
     },
 
@@ -159,7 +162,8 @@
             { "include": "#identifier-path" },
             { "include": "#operator" },
             { "include": "#string" },
-            { "include": "#number" }
+            { "include": "#number" },
+            { "include": "#semicolon" }
           ]
         }
       ]
@@ -168,6 +172,11 @@
     "identifier-path": {
       "name": "variable.other.property.ferron",
       "match": "[A-Za-z][A-Za-z0-9_-]*(?:\\.[A-Za-z][A-Za-z0-9_-]*)+"
+    },
+
+    "semicolon": {
+      "name": "punctuation.delimiter.semicolon.ferron",
+      "match": ";"
     }
   }
 }

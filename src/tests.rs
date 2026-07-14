@@ -1599,3 +1599,132 @@ fn test_existing_ipv6_with_port_still_works() {
         panic!("Expected IPv6 address");
     }
 }
+
+#[test]
+fn test_semicolon_delimiter_between_directives() {
+    // `;` is an optional delimiter between directives (newlines are idiomatic).
+    let input = "server_name example.com; enabled true";
+    let config = Config::from_str(input).expect("semicolon-delimited directives should parse");
+    assert_eq!(config.find_directives("server_name").len(), 1);
+    assert_eq!(
+        config.find_directives("server_name")[0].get_string_arg(0),
+        Some("example.com")
+    );
+    assert_eq!(config.find_directives("enabled").len(), 1);
+    assert_eq!(
+        config.find_directives("enabled")[0].get_boolean_arg(0),
+        Some(true)
+    );
+}
+
+#[test]
+fn test_semicolon_delimiter_inside_block() {
+    let input = "example.com {\n    root /var/www; index index.html\n}";
+    let config = Config::from_str(input).expect("semicolon inside block should parse");
+    let hb = config.find_host_blocks()[0];
+    assert_eq!(hb.block.find_directives("root").len(), 1);
+    assert_eq!(hb.block.find_directives("index").len(), 1);
+}
+
+#[test]
+fn test_semicolon_delimiter_match_block() {
+    let input = r#"
+match foo {
+    a == b; c ~ "d"
+}
+"#;
+    let config = Config::from_str(input).expect("semicolon inside match block should parse");
+    let match_blocks = config.find_match_blocks();
+    assert_eq!(match_blocks.len(), 1);
+    assert_eq!(match_blocks[0].expr.len(), 2);
+}
+
+#[test]
+fn test_invalid_bare_string_jammed_tokens_fails() {
+    let input = "directive 34[::1]34";
+    let res = Config::from_str(input);
+    assert!(
+        res.is_err(),
+        "Expected parse error for jammed tokens like 34[::1]34"
+    );
+}
+
+#[test]
+fn test_invalid_bare_string_jammed_tokens_separated_ok() {
+    // With whitespace separating the tokens, the input is valid:
+    // a number followed by a separate bracketed bare string.
+    let input = "directive 34 [::1]34";
+    let config = Config::from_str(input).expect("separated tokens should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_integer_arg(0), Some(34));
+    assert_eq!(d.get_string_arg(1), Some("[::1]:34"));
+}
+
+#[test]
+fn test_jammed_string_quoted_adjacent() {
+    let input = r#"directive "a""a""#;
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for jammed quoted strings");
+}
+
+#[test]
+fn test_jammed_quoted_string_with_number() {
+    let input = r#"directive "a"3.5"#;
+    let res = Config::from_str(input);
+    assert!(
+        res.is_err(),
+        "Expected error for quoted string jammed with number"
+    );
+}
+
+#[test]
+fn test_jammed_quoted_string_with_boolean() {
+    let input = r#"directive "g"true"#;
+    let res = Config::from_str(input);
+    assert!(
+        res.is_err(),
+        "Expected error for quoted string jammed with boolean"
+    );
+}
+
+#[test]
+fn test_jammed_number_with_number_via_sign() {
+    // `80-443` produces two Number tokens jammed without whitespace:
+    // Number("80") and Number("-443").
+    let input = "directive 80-443";
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for jammed number tokens");
+}
+
+#[test]
+fn test_jammed_number_with_number_plus() {
+    // `3+3` produces two Number tokens jammed without whitespace:
+    // Number("3") and Number("3").
+    let input = "directive 3+3";
+    let res = Config::from_str(input);
+    assert!(res.is_err(), "Expected error for jammed number tokens");
+}
+
+#[test]
+fn test_jammed_plus_float_parses_as_string_ok() {
+    // `+3.5+3.5` tokenizes as Number("3") + StringBare(".5+3.5"), then the
+    // parser merges them into a single String value (IP-like path).
+    // This is one value, not two jammed values.
+    let input = "directive +3.5+3.5";
+    let config = Config::from_str(input).expect("+3.5+3.5 should parse as a single string");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("3.5+3.5"));
+}
+
+#[test]
+fn test_jammed_values_with_whitespace_ok() {
+    // With whitespace, these are all fine.
+    let input = r#"directive 80 443 "a" "g" true +3.5 +3.5"#;
+    let config = Config::from_str(input).expect("separated values should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_integer_arg(0), Some(80));
+    assert_eq!(d.get_integer_arg(1), Some(443));
+    assert_eq!(d.get_string_arg(2), Some("a"));
+    assert_eq!(d.get_string_arg(3), Some("g"));
+    assert_eq!(d.get_boolean_arg(4), Some(true));
+}

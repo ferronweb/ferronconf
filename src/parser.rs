@@ -88,6 +88,7 @@ impl Parser {
                 kind: TokenKind::EOF,
                 lexeme: None,
                 span,
+                had_whitespace: false,
             },
         );
         self.pos += 1;
@@ -95,7 +96,10 @@ impl Parser {
     }
 
     fn skip_ignorable_tokens(&mut self) {
-        while self.peek().kind == TokenKind::Comment {
+        while matches!(
+            self.peek().kind,
+            TokenKind::Comment | TokenKind::Semicolon
+        ) {
             self.advance();
         }
     }
@@ -591,6 +595,15 @@ impl Parser {
             }
 
             TokenKind::Number => {
+                if self.check(TokenKind::LBracket) && !self.peek().had_whitespace {
+                    return Err(ParseError {
+                        message:
+                            "Invalid bare string: a number cannot be directly followed by '[' without whitespace"
+                                .into(),
+                        span,
+                    });
+                }
+
                 let integer_text = token.lexeme.as_deref().ok_or(ParseError {
                     message: "Missing token text for Number".into(),
                     span,
@@ -661,6 +674,14 @@ impl Parser {
         let mut args = Vec::new();
 
         while self.is_value_start() {
+            // Reject adjacent value tokens without whitespace between them.
+            // This prevents silent token jamming (e.g. `"a""a"`, `+3.5+3.5`).
+            if !args.is_empty() && !self.peek().had_whitespace {
+                return Err(ParseError {
+                    message: "Values must be separated by whitespace".into(),
+                    span: self.peek().span,
+                });
+            }
             args.push(self.parse_value()?);
         }
 
@@ -923,6 +944,11 @@ impl Parser {
         let start_span = self.peek().span;
         let mut hosts = Vec::new();
         loop {
+            // Skip optional `;` delimiters between host patterns.
+            while self.check(TokenKind::Semicolon) {
+                self.advance();
+            }
+
             let host = self.parse_host_pattern()?;
             hosts.push(host);
 
@@ -959,6 +985,10 @@ impl Parser {
             let token = &self.tokens[i];
             match token.kind {
                 TokenKind::LBrace => return true,
+                TokenKind::Semicolon => {
+                    i += 1;
+                    continue;
+                }
                 TokenKind::LBracket => {
                     in_ipv6 = true;
                 }
@@ -1022,7 +1052,24 @@ impl Parser {
     /// or a [`ParseError`] if parsing fails. The trailing comment is stored
     /// in the last statement of the returned vector.
     fn parse_statement(&mut self, top_level: bool) -> Result<Vec<Statement>, ParseError> {
-        let leading_comments = self.collect_comment_statements();
+        // Skip leading semicolon delimiters (`;`) and collect any comments
+        // that precede this statement as leading `Statement::Comment` nodes.
+        let mut leading_comments = Vec::new();
+        loop {
+            match self.peek().kind {
+                TokenKind::Comment => {
+                    let token = self.advance_owned();
+                    leading_comments.push(Statement::Comment(
+                        token.lexeme.unwrap_or_default(),
+                        token.span,
+                    ));
+                }
+                TokenKind::Semicolon => {
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
 
         // After collecting comments, check what's next
         if self.check(TokenKind::EOF) {

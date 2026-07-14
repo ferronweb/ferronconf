@@ -30,6 +30,9 @@ pub(crate) enum TokenKind {
     /// Right bracket `]`.
     RBracket,
 
+    /// Statement delimiter `;` (optional separator between statements).
+    Semicolon,
+
     /// Equality operator `==`.
     OpEq,
     /// Inequality operator `!=`.
@@ -88,6 +91,12 @@ pub(crate) struct Token {
     pub lexeme: Option<String>,
     /// The source location of this token.
     pub span: Span,
+    /// Whether this token was preceded by whitespace in the source.
+    ///
+    /// This acts as a "whitespace token" marker: it lets the parser detect
+    /// when two tokens are jammed together without separation (e.g.
+    /// `34[::1]34`), which is invalid bare-string syntax.
+    pub had_whitespace: bool,
 }
 
 impl Token {
@@ -97,6 +106,7 @@ impl Token {
             kind,
             lexeme: None,
             span,
+            had_whitespace: false,
         }
     }
 
@@ -106,6 +116,7 @@ impl Token {
             kind,
             lexeme: Some(lexeme),
             span,
+            had_whitespace: false,
         }
     }
 }
@@ -173,10 +184,12 @@ impl<'a> Lexer<'a> {
         self.next
     }
 
-    fn skip_whitespace(&mut self) -> (bool, usize) {
+    fn skip_whitespace(&mut self) -> (bool, bool, usize) {
         let mut had_newlines = false;
+        let mut had_whitespace = false;
         let mut consecutive_newlines: usize = 0;
         while matches!(self.current, Some(c) if c.is_whitespace()) {
+            had_whitespace = true;
             if matches!(self.current, Some('\n') | Some('\r')) {
                 had_newlines = true;
                 consecutive_newlines += 1;
@@ -185,7 +198,7 @@ impl<'a> Lexer<'a> {
         }
         // blank lines = newlines - 1 (e.g., 2 newlines = 1 blank line)
         let blank_lines = consecutive_newlines.saturating_sub(1);
-        (had_newlines, blank_lines)
+        (had_newlines, had_whitespace, blank_lines)
     }
 
     /// Returns the blank line counts collected during lexing.
@@ -279,7 +292,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn is_bare_string_char(c: char) -> bool {
-        !c.is_whitespace() && !matches!(c, '{' | '}' | '"' | '#' | '[' | ']' | ',')
+        !c.is_whitespace() && !matches!(c, '{' | '}' | '"' | '#' | '[' | ']' | ',' | ';')
     }
 
     fn read_bare_string(&mut self) -> String {
@@ -330,7 +343,7 @@ impl<'a> Lexer<'a> {
     /// The next [`Token`], or `EOF` if at the end of input.
     pub fn next_token(&mut self) -> Token {
         loop {
-            let (had_newlines, blank_lines) = self.skip_whitespace();
+            let (had_newlines, had_whitespace, blank_lines) = self.skip_whitespace();
             self.blank_line_counts.push(blank_lines);
 
             let span = Span {
@@ -338,7 +351,7 @@ impl<'a> Lexer<'a> {
                 column: self.column,
             };
 
-            let token = match self.current {
+            let mut token = match self.current {
                 Some('{') if self.peek() == Some('{') => {
                     self.advance();
                     self.advance();
@@ -371,6 +384,11 @@ impl<'a> Lexer<'a> {
                     Token::bare(TokenKind::RBracket, span)
                 }
 
+                Some(';') => {
+                    self.advance();
+                    Token::bare(TokenKind::Semicolon, span)
+                }
+
                 Some('"') => {
                     let value = self.read_string();
                     Token::with_lexeme(TokenKind::StringQuoted, value, span)
@@ -388,7 +406,9 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Comment
                     };
-                    return Token::with_lexeme(kind, comment_text, span);
+                    let mut t = Token::with_lexeme(kind, comment_text, span);
+                    t.had_whitespace = had_whitespace;
+                    return t;
                 }
 
                 Some('=') if self.peek() == Some('=') => {
@@ -464,6 +484,7 @@ impl<'a> Lexer<'a> {
                 }
             };
 
+            token.had_whitespace = had_whitespace;
             self.prev_token = Some(token.kind);
             self.last_non_comment_line = span.line;
             return token;

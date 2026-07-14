@@ -1,6 +1,6 @@
 /* whitespace would be discarded by a lexer */
 
-config          ::= statement* EOF
+config          ::= ( ';' | statement )* EOF
 
 statement       ::= directive
                   | host-block
@@ -10,7 +10,7 @@ statement       ::= directive
 
 directive       ::= identifier value* block?
 
-block           ::= '{' statement* '}'
+block           ::= '{' ( ';' | statement )* '}'
 
 host-block      ::= host-pattern ( ',' host-pattern )* block
                   /* only allowed at top level */
@@ -22,7 +22,7 @@ snippet-block   ::= 'snippet' identifier block
 
 match-block     ::= 'match' identifier matcher-block
 
-matcher-block   ::= '{' matcher-expression* '}'
+matcher-block   ::= '{' (';' | matcher-expression)* '}'
 
 matcher-expression
                 ::= operand operator operand
@@ -78,9 +78,11 @@ quoted-char     ::= [^"\\]
 
 bare-string     ::= bare-char+
 
-/* any character except whitespace, braces, quotes, hash, and comma */
+/* any character except whitespace, braces, quotes, hash, comma, and semicolon */
 /* Note: [ and ] are structural at line start (IPv6), but part of bare strings elsewhere */
-bare-char       ::= [^?"{}",#\n\r\t ]
+bare-char       ::= [^?"{}",;#\n\r\t ]
+
+/* commas and semicolons between tokens are discarded, serving as optional delimiters */
 
 identifier      ::= ALPHA ( ALPHA | DIGIT | '_' | '-' )*
 
