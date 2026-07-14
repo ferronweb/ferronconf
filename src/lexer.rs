@@ -211,7 +211,8 @@ impl<'a> Lexer<'a> {
                 self.advance(); // skip `\`
 
                 // Skip whitespace after `\`
-                while matches!(self.current, Some(c) if c.is_whitespace() && c != '\n' && c != '\r') {
+                while matches!(self.current, Some(c) if c.is_whitespace() && c != '\n' && c != '\r')
+                {
                     self.advance();
                 }
 
@@ -530,7 +531,11 @@ impl<'a> Lexer<'a> {
 
                 Some('*') if !self.allow_bare_string() || had_newlines => {
                     self.advance();
-                    Ok(Token::with_lexeme(TokenKind::StringBare, "*".to_string(), span))
+                    Ok(Token::with_lexeme(
+                        TokenKind::StringBare,
+                        "*".to_string(),
+                        span,
+                    ))
                 }
 
                 Some(c)

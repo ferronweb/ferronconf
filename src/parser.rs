@@ -96,10 +96,7 @@ impl Parser {
     }
 
     fn skip_ignorable_tokens(&mut self) {
-        while matches!(
-            self.peek().kind,
-            TokenKind::Comment | TokenKind::Semicolon
-        ) {
+        while matches!(self.peek().kind, TokenKind::Comment | TokenKind::Semicolon) {
             self.advance();
         }
     }
@@ -178,18 +175,20 @@ impl Parser {
         let integer = Self::parse_integer(digits, span)?;
 
         if self.check(TokenKind::StringBare)
-            && self.peek().lexeme.as_deref().is_some_and(|l| l.starts_with('.'))
+            && self
+                .peek()
+                .lexeme
+                .as_deref()
+                .is_some_and(|l| l.starts_with('.'))
         {
             let rest = &self.peek().lexeme.as_deref().unwrap()[1..];
             if rest.chars().all(|c| c.is_ascii_digit()) {
                 let token = self.advance_owned();
                 let decimal_text = Self::token_text(&token)?;
-                let decimal_text = decimal_text
-                    .strip_prefix('.')
-                    .ok_or_else(|| ParseError {
-                        message: "Invalid number".into(),
-                        span: token.span,
-                    })?;
+                let decimal_text = decimal_text.strip_prefix('.').ok_or_else(|| ParseError {
+                    message: "Invalid number".into(),
+                    span: token.span,
+                })?;
                 let number = Self::parse_decimal(integer, decimal_text, negative, token.span)?;
                 Ok(ParsedNumber::Float(number))
             } else {
@@ -282,7 +281,11 @@ impl Parser {
                 })?);
 
                 while self.check(TokenKind::StringBare)
-                    && self.peek().lexeme.as_deref().is_some_and(|l| l.starts_with('.'))
+                    && self
+                        .peek()
+                        .lexeme
+                        .as_deref()
+                        .is_some_and(|l| l.starts_with('.'))
                 {
                     let token = self.advance_owned();
                     let lexeme = token.lexeme.ok_or(ParseError {
@@ -297,13 +300,15 @@ impl Parser {
                 Ok(Operand::Identifier(group, span))
             }
 
-            TokenKind::StringBare | TokenKind::StringQuoted | TokenKind::StringRaw => Ok(Operand::String(
-                token.lexeme.ok_or(ParseError {
-                    message: format!("Missing token text for {:?}", token.kind),
+            TokenKind::StringBare | TokenKind::StringQuoted | TokenKind::StringRaw => {
+                Ok(Operand::String(
+                    token.lexeme.ok_or(ParseError {
+                        message: format!("Missing token text for {:?}", token.kind),
+                        span,
+                    })?,
                     span,
-                })?,
-                span,
-            )),
+                ))
+            }
 
             TokenKind::Number => {
                 let integer_text = token.lexeme.as_deref().ok_or(ParseError {
@@ -725,11 +730,12 @@ impl Parser {
                     is_ipv6 = false;
                     if self.check(TokenKind::Number) {
                         let port_token = self.advance_owned();
-                        port = Some(Self::token_text(&port_token)?
-                            .parse::<u16>()
-                            .map_err(|_| ParseError {
-                                message: "Invalid port number".into(),
-                                span: port_token.span,
+                        port =
+                            Some(Self::token_text(&port_token)?.parse::<u16>().map_err(|_| {
+                                ParseError {
+                                    message: "Invalid port number".into(),
+                                    span: port_token.span,
+                                }
                             })?);
                         break;
                     }
@@ -1021,18 +1027,16 @@ impl Parser {
                     | TokenKind::Number
                     | TokenKind::StringBare
                     | TokenKind::StringRaw
-                    | TokenKind::RBracket => {
-                        match token.kind {
-                            TokenKind::LBracket
-                            | TokenKind::LBrace
-                            | TokenKind::StringBare
-                            | TokenKind::StringRaw
-                            | TokenKind::Number
-                            | TokenKind::Identifier
-                            | TokenKind::Boolean => {}
-                            _ => return false,
-                        }
-                    }
+                    | TokenKind::RBracket => match token.kind {
+                        TokenKind::LBracket
+                        | TokenKind::LBrace
+                        | TokenKind::StringBare
+                        | TokenKind::StringRaw
+                        | TokenKind::Number
+                        | TokenKind::Identifier
+                        | TokenKind::Boolean => {}
+                        _ => return false,
+                    },
                     _ => {}
                 }
             }

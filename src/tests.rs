@@ -1733,14 +1733,20 @@ fn test_jammed_values_with_whitespace_ok() {
 fn test_invalid_escape_sequence_errors() {
     let input = r#"directive "\z""#;
     let res = Config::from_str(input);
-    assert!(res.is_err(), "Expected error for invalid escape sequence \\z");
+    assert!(
+        res.is_err(),
+        "Expected error for invalid escape sequence \\z"
+    );
 }
 
 #[test]
 fn test_invalid_escape_sequence_hex_errors() {
     let input = r#"directive "\x41""#;
     let res = Config::from_str(input);
-    assert!(res.is_err(), "Expected error for invalid escape sequence \\x");
+    assert!(
+        res.is_err(),
+        "Expected error for invalid escape sequence \\x"
+    );
 }
 
 #[test]
