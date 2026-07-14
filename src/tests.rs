@@ -1466,3 +1466,136 @@ match curl_client {
     );
     assert_eq!(expr.right.as_str(), Some("curl"));
 }
+
+// ============================================================================
+// Extended Bare String Character Tests
+// ============================================================================
+
+#[test]
+fn test_bare_string_percent() {
+    let input = "directive /path%20name";
+    let config = Config::from_str(input).expect("bare string with % should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("/path%20name"));
+}
+
+#[test]
+fn test_bare_string_query_params() {
+    let input = "directive /path?a&b&c";
+    let config = Config::from_str(input).expect("bare string with ? and & should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("/path?a&b&c"));
+}
+
+#[test]
+fn test_bare_string_email() {
+    let input = "contact admin@example.com";
+    let config = Config::from_str(input).expect("bare string with @ should parse");
+    let d = config.find_directives("contact")[0];
+    assert_eq!(d.get_string_arg(0), Some("admin@example.com"));
+}
+
+#[test]
+fn test_bare_string_ipv6_in_url() {
+    let input = r#"proxy http://[::1]:8080/path"#;
+    let config = Config::from_str(input).expect("bare string with [ and ] should parse");
+    let d = config.find_directives("proxy")[0];
+    assert_eq!(d.get_string_arg(0), Some("http://[::1]:8080/path"));
+}
+
+#[test]
+fn test_bare_string_ipv6_inside_host() {
+    let input = r#"http localhost {
+    host [::1]
+}"#;
+    let config = Config::from_str(input).expect("bare string with [ and ] should parse");
+    let hb = config.find_host_blocks()[0];
+    let d = hb.block.find_directives("host")[0];
+    assert_eq!(d.get_string_arg(0), Some("[::1]"));
+}
+
+#[test]
+fn test_bare_string_ipv4_inside_host() {
+    let input = r#"http localhost {
+    host 192.168.1.1
+}"#;
+    let config = Config::from_str(input).expect("bare string with IPv4 addr should parse");
+    let hb = config.find_host_blocks()[0];
+    let d = hb.block.find_directives("host")[0];
+    assert_eq!(d.get_string_arg(0), Some("192.168.1.1"));
+}
+
+#[test]
+fn test_bare_string_ipv6_with_port_inside_host() {
+    let input = r#"http localhost {
+    host [::1]:8080
+}"#;
+    let config = Config::from_str(input).expect("bare string with [ and ] should parse");
+    let hb = config.find_host_blocks()[0];
+    let d = hb.block.find_directives("host")[0];
+    assert_eq!(d.get_string_arg(0), Some("[::1]:8080"));
+}
+
+#[test]
+fn test_bare_string_ipv4_with_port_inside_host() {
+    let input = r#"http localhost {
+    host 192.168.1.1:8080
+}"#;
+    let config = Config::from_str(input).expect("bare string with IPv4 addr should parse");
+    let hb = config.find_host_blocks()[0];
+    let d = hb.block.find_directives("host")[0];
+    assert_eq!(d.get_string_arg(0), Some("192.168.1.1"));
+}
+
+#[test]
+fn test_host_block_protocol_ipv6_bare_string() {
+    let input = "http [::1]:8080 {}";
+    let config = Config::from_str(input).expect("protocol + IPv6 bare string should parse");
+    let hb = config.find_host_blocks()[0];
+    assert_eq!(hb.hosts[0].protocol.as_deref(), Some("http"));
+    if let HostLabels::IpAddr(IpAddr::V6(addr)) = hb.hosts[0].labels {
+        assert_eq!(addr, Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
+    } else {
+        panic!("Expected IPv6 address");
+    }
+    assert_eq!(hb.hosts[0].port, Some(8080));
+}
+
+#[test]
+fn test_host_block_protocol_ipv6_no_port() {
+    let input = "tcp [::1] {}";
+    let config = Config::from_str(input).expect("protocol + IPv6 without port should parse");
+    let hb = config.find_host_blocks()[0];
+    assert_eq!(hb.hosts[0].protocol.as_deref(), Some("tcp"));
+    if let HostLabels::IpAddr(IpAddr::V6(addr)) = hb.hosts[0].labels {
+        assert_eq!(addr, Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
+    } else {
+        panic!("Expected IPv6 address");
+    }
+    assert_eq!(hb.hosts[0].port, None);
+}
+
+#[test]
+fn test_existing_ipv6_host_block_still_works() {
+    let input = "[::1] {}";
+    let config = Config::from_str(input).expect("standalone IPv6 host block should still parse");
+    let hb = config.find_host_blocks()[0];
+    if let HostLabels::IpAddr(IpAddr::V6(addr)) = hb.hosts[0].labels {
+        assert_eq!(addr, Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
+    } else {
+        panic!("Expected IPv6 address");
+    }
+}
+
+#[test]
+fn test_existing_ipv6_with_port_still_works() {
+    let input = "[2001:db8::1]:8080 {}";
+    let config = Config::from_str(input).expect("IPv6 with port should still parse");
+    let hb = config.find_host_blocks()[0];
+    assert_eq!(hb.hosts[0].port, Some(8080));
+    if let HostLabels::IpAddr(IpAddr::V6(addr)) = hb.hosts[0].labels {
+        assert_eq!(addr.to_string(), "2001:db8::1");
+    } else {
+        panic!("Expected IPv6 address");
+    }
+}

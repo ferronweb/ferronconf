@@ -78,15 +78,9 @@ quoted-char     ::= [^"\\]
 
 bare-string     ::= bare-char+
 
-bare-char       ::= ALPHA
-                  | DIGIT
-                  | '_'
-                  | '-'
-                  | '.'
-                  | ':'
-                  | '/'
-                  | '*'
-                  | '+'
+/* any character except whitespace, braces, quotes, hash, and comma */
+/* Note: [ and ] are structural at line start (IPv6), but part of bare strings elsewhere */
+bare-char       ::= [^?"{}",#\n\r\t ]
 
 identifier      ::= ALPHA ( ALPHA | DIGIT | '_' | '-' )*
 

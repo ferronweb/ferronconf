@@ -29,18 +29,6 @@ pub(crate) enum TokenKind {
     LBracket,
     /// Right bracket `]`.
     RBracket,
-    /// Colon `:`.
-    Colon,
-    /// Dot `.`.
-    Dot,
-    /// Star/wildcard `*`.
-    Star,
-    /// Comma `,`.
-    Comma,
-    /// Minus sign `-` (for negative numbers).
-    Minus,
-    /// Plus sign `+` (for positive numbers).
-    Plus,
 
     /// Equality operator `==`.
     OpEq,
@@ -290,15 +278,15 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn is_bare_char(c: char) -> bool {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '/' | '*' | '+')
+    fn is_bare_string_char(c: char) -> bool {
+        !c.is_whitespace() && !matches!(c, '{' | '}' | '"' | '#' | '[' | ']' | ',')
     }
 
     fn read_bare_string(&mut self) -> String {
         let mut s = String::new();
 
         while let Some(c) = self.current {
-            if Self::is_bare_char(c) {
+            if Self::is_bare_string_char(c) {
                 s.push(c);
                 self.advance();
             } else {
@@ -320,11 +308,13 @@ impl<'a> Lexer<'a> {
                 | Some(TokenKind::Number)
                 | Some(TokenKind::StringQuoted)
                 | Some(TokenKind::StringBare)
+                | Some(TokenKind::Boolean)
                 | Some(TokenKind::OpRegex)
                 | Some(TokenKind::OpNotRegex)
                 | Some(TokenKind::OpEq)
                 | Some(TokenKind::OpNeq)
                 | Some(TokenKind::OpIn)
+                | Some(TokenKind::LBracket)
         )
     }
 
@@ -381,26 +371,6 @@ impl<'a> Lexer<'a> {
                     Token::bare(TokenKind::RBracket, span)
                 }
 
-                Some(':') => {
-                    self.advance();
-                    Token::bare(TokenKind::Colon, span)
-                }
-
-                Some('.') => {
-                    self.advance();
-                    Token::bare(TokenKind::Dot, span)
-                }
-
-                Some(',') => {
-                    self.advance();
-                    Token::bare(TokenKind::Comma, span)
-                }
-
-                Some('*') => {
-                    self.advance();
-                    Token::bare(TokenKind::Star, span)
-                }
-
                 Some('"') => {
                     let value = self.read_string();
                     Token::with_lexeme(TokenKind::StringQuoted, value, span)
@@ -451,15 +421,26 @@ impl<'a> Lexer<'a> {
 
                 Some('-') if self.peek().is_some_and(|p| p.is_ascii_digit()) => {
                     self.advance();
-                    Token::bare(TokenKind::Minus, span)
+                    let n = self.read_number();
+                    Token::with_lexeme(TokenKind::Number, format!("-{n}"), span)
                 }
 
                 Some('+') if self.peek().is_some_and(|p| p.is_ascii_digit()) => {
                     self.advance();
-                    Token::bare(TokenKind::Plus, span)
+                    let n = self.read_number();
+                    Token::with_lexeme(TokenKind::Number, n, span)
                 }
 
-                Some(c) if Self::is_bare_char(c) && self.allow_bare_string() && !had_newlines => {
+                Some('*') if !self.allow_bare_string() || had_newlines => {
+                    self.advance();
+                    Token::with_lexeme(TokenKind::StringBare, "*".to_string(), span)
+                }
+
+                Some(c)
+                    if Self::is_bare_string_char(c)
+                        && self.allow_bare_string()
+                        && !had_newlines =>
+                {
                     let value = self.read_bare_string();
                     let kind = if value == "true" || value == "false" {
                         TokenKind::Boolean

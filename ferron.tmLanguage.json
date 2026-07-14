@@ -54,7 +54,7 @@
 
     "bare-string": {
       "name": "string.unquoted.ferron",
-      "match": "[A-Za-z0-9_\\-\\.:/\\*\\+]+"
+      "match": "[^\\s{}#\",]+"
     },
 
     "interpolation": {
@@ -109,7 +109,7 @@
     },
 
     "host-block": {
-      "begin": "^(\\s*)(?!match\\s+|snippet\\s+)((?:(?:[A-Za-z0-9_\\-\\.:]+\\s+)?[A-Za-z0-9_\\-\\.:\\[\\]*]+(?:\\s*,\\s*)?)*)\\s*(?=\\{)",
+      "begin": "^(\\s*)(?!match\\s+|snippet\\s+)((?:[^\\s{}#\"\\[\\],]+\\s+)*(?:[^\\s{}#\"\\[\\],]+|\\[[^\\]]*\\](?::\\d+)?))(?:\\s*,\\s*[^\\s{}#\"\\[\\],]+)*\\s*(?=\\{)",
       "beginCaptures": {
         "2": { "name": "entity.name.host.ferron" }
       },

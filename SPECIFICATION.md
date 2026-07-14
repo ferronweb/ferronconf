@@ -1,4 +1,4 @@
-# `ferron.conf` file format specification (v1.2)
+# `ferron.conf` file format specification (v1.3)
 
 ## 1. Overview
 
@@ -13,7 +13,7 @@ This specification defines the formal syntax of the format based on its EBNF gra
 The configuration file is encoded in UTF-8 and contains:
 - **Alphabetic characters** - `A-Z`, `a-z`
 - **Numeric digits** - `0-9`
-- **Special symbols** - `{ } [ ] : . * , - = ! ~ / + _ " \ #`
+- **Special symbols** - `{ } [ ] : . * , - = ! ~ / + _ " \ # % & ? @`
 
 ### 2.2 Whitespace and comments
 
@@ -25,9 +25,9 @@ The configuration file is encoded in UTF-8 and contains:
 | Token Type | Description | Examples |
 |------------|-------------|----------|
 | `Identifier` | Alphanumeric sequence starting with a letter | `server_name`, `max_connections` |
-| `Number` | Integer or decimal value | `80`, `443`, `1.5` |
+| `Number` | Integer or decimal value (sign absorbed from `-`/`+` before digit) | `80`, `443`, `1.5`, `-10` |
 | `StringQuoted` | Double-quoted string (supports escapes) | `"example.com"`, `"path/to/file"` |
-| `StringBare` | Unquoted string of valid characters | `localhost`, `index.html` |
+| `StringBare` | Unquoted string of non-whitespace, non-structural characters | `localhost`, `index.html`, `*` |
 | `Boolean` | Literal values `true` or `false` | `true`, `false` |
 | `Interpolation` | Variable interpolation syntax | `${variable}`, `{{path.to.value}}` |
 
@@ -113,6 +113,7 @@ http api.example.com {
 - Host blocks are only allowed at the top level.
 - The `*` wildcard matches any hostname or host label.
 - IPv6 addresses must be enclosed in square brackets.
+- Commas between host patterns are lexer-transparent (they are stripped by the lexer, not tokenized).
 
 ### 4.3 Global blocks
 
@@ -207,7 +208,7 @@ match english_language {
 
 Strings can be specified as:
 - **Quoted strings** - enclosed in double quotes, support escape sequences (`\n`, `\r`, `\t`, `\\`)
-- **Bare strings** - unquoted sequences of valid characters (alphanumeric, `_`, `-`, `.`, `:`, `/`, `*`, `+`)
+- **Bare strings** - unquoted sequences of any characters except whitespace, `{`, `}`, `"`, `#`, and `,`. Including characters like `.`, `:`, `*`, `/`, `[`, and `]` directly. Note that `[`/`]` brackets are structural at line start for IPv6 host patterns, but part of bare strings in directive arguments.
 
 **Escape sequences:**
 | Escape | Character |
@@ -394,15 +395,23 @@ The reference parser reports errors with:
 
 ### 9.1 Lexer behavior
 
-- Bare strings are only allowed after certain token types (identifiers, numbers, operators) to avoid ambiguity.
+- Bare strings are only allowed after certain token types (identifiers, numbers, quoted strings, operators) to avoid ambiguity.
 - The lexer is case-sensitive for keywords (`match`, `snippet`) and boolean values.
+- Characters `.`, `:`, `*`, `-`, `+`, `/`, `%`, `&`, `?`, `@` are absorbed into bare strings or numbers; they no longer have dedicated tokens.
+- The `*` wildcard in host patterns produces a `StringBare("*")` token.
+- Commas (`,`) between host patterns are discarded by the lexer.
+- IPv6 addresses use `[`/`]` as bracket tokens; `:8080` after `]` is parsed as a `Number` token for the port.
+- `[` and `]` are structural at line start (for IPv6 host patterns) but part of bare strings in directive arguments.
 
 ### 9.2 Parser behavior
 
 - Host patterns can be comma-separated in host blocks.
 - Interpolation syntax uses double braces `{{ }}`.
 - Match expressions are evaluated sequentially within a match block.
+- Host pattern protocol detection uses lookahead: if a single label precedes a non-dotted bare string, it becomes the protocol.
+- Dotted paths in identifiers and interpolation split on `.` to produce path segments.
+- Number literals that include a `.` are split into a `Number` token and a `StringBare` continuation (e.g., `3.14` → `Number("3")` + `StringBare(".14")`).
 
 ## 10. Backward compatibility
 
-This specification defines version 1.1 of the Ferron configuration format. Future versions may extend the grammar with additional features while maintaining backward compatibility where possible.
+This specification defines version 1.3 of the Ferron configuration format. Future versions may extend the grammar with additional features while maintaining backward compatibility where possible.

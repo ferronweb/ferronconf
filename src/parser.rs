@@ -162,23 +162,39 @@ impl Parser {
         &mut self,
         integer_text: &str,
         span: Span,
-        negative: bool,
+        _negative: bool,
     ) -> Result<ParsedNumber, ParseError> {
-        let integer = Self::parse_integer(integer_text, span)?;
+        let (negative, digits) = if let Some(rest) = integer_text.strip_prefix('-') {
+            (true, rest)
+        } else if let Some(rest) = integer_text.strip_prefix('+') {
+            (false, rest)
+        } else {
+            (false, integer_text)
+        };
+        let integer = Self::parse_integer(digits, span)?;
 
-        if self.check(TokenKind::Dot) {
-            self.advance();
-            let token = self.advance_owned();
-            if token.kind != TokenKind::Number {
-                return Err(ParseError {
-                    message: "Invalid number".into(),
-                    span: token.span,
-                });
+        if self.check(TokenKind::StringBare)
+            && self.peek().lexeme.as_deref().is_some_and(|l| l.starts_with('.'))
+        {
+            let rest = &self.peek().lexeme.as_deref().unwrap()[1..];
+            if rest.chars().all(|c| c.is_ascii_digit()) {
+                let token = self.advance_owned();
+                let decimal_text = Self::token_text(&token)?;
+                let decimal_text = decimal_text
+                    .strip_prefix('.')
+                    .ok_or_else(|| ParseError {
+                        message: "Invalid number".into(),
+                        span: token.span,
+                    })?;
+                let number = Self::parse_decimal(integer, decimal_text, negative, token.span)?;
+                Ok(ParsedNumber::Float(number))
+            } else {
+                Ok(ParsedNumber::Integer(if negative {
+                    -integer
+                } else {
+                    integer
+                }))
             }
-
-            let decimal_text = Self::token_text(&token)?;
-            let number = Self::parse_decimal(integer, decimal_text, negative, token.span)?;
-            Ok(ParsedNumber::Float(number))
         } else {
             Ok(ParsedNumber::Integer(if negative {
                 -integer
@@ -196,8 +212,7 @@ impl Parser {
                 | TokenKind::Number
                 | TokenKind::Boolean
                 | TokenKind::InterpStart
-                | TokenKind::Minus
-                | TokenKind::Plus
+                | TokenKind::LBracket
         )
     }
 
@@ -261,19 +276,16 @@ impl Parser {
                     span,
                 })?);
 
-                while self.check(TokenKind::Dot) {
-                    self.advance();
+                while self.check(TokenKind::StringBare)
+                    && self.peek().lexeme.as_deref().is_some_and(|l| l.starts_with('.'))
+                {
                     let token = self.advance_owned();
-                    if token.kind == TokenKind::Identifier {
-                        group.push(token.lexeme.ok_or(ParseError {
-                            message: "Missing token text for Identifier".into(),
-                            span: token.span,
-                        })?);
-                    } else {
-                        return Err(ParseError {
-                            message: "Invalid identifier".into(),
-                            span: token.span,
-                        });
+                    let lexeme = token.lexeme.ok_or(ParseError {
+                        message: "Missing token text for StringBare".into(),
+                        span: token.span,
+                    })?;
+                    for part in lexeme.split('.').filter(|s| !s.is_empty()) {
+                        group.push(part.to_string());
                     }
                 }
 
@@ -473,7 +485,76 @@ impl Parser {
                     message: format!("Missing token text for {:?}", token.kind),
                     span,
                 })?;
-                Self::parse_string_with_interpolation(text, token.span)
+                let mut value = Self::parse_string_with_interpolation(text, token.span)?;
+
+                // Check for bracket continuation (e.g., http://[::1]:8080/path)
+                if self.check(TokenKind::LBracket) {
+                    if let Value::String(ref s, _) = value {
+                        let mut full_value = s.clone();
+                        full_value.push('[');
+                        self.advance(); // skip [
+                        while !self.check(TokenKind::RBracket) && !self.check(TokenKind::EOF) {
+                            if let Some(lexeme) = &self.peek().lexeme {
+                                full_value.push_str(lexeme);
+                            }
+                            self.advance();
+                        }
+                        if self.check(TokenKind::RBracket) {
+                            full_value.push(']');
+                            self.advance();
+                        }
+                        // Insert ':' before Number after ']' (port syntax)
+                        if full_value.ends_with(']') && self.check(TokenKind::Number) {
+                            full_value.push(':');
+                            if let Some(lexeme) = &self.peek().lexeme {
+                                full_value.push_str(lexeme);
+                            }
+                            self.advance();
+                        }
+                        // Continue reading trailing bare strings
+                        while self.check(TokenKind::StringBare) || self.check(TokenKind::Number) {
+                            if let Some(lexeme) = &self.peek().lexeme {
+                                full_value.push_str(lexeme);
+                            }
+                            self.advance();
+                        }
+                        value = Value::String(full_value, span);
+                    }
+                }
+
+                Ok(value)
+            }
+
+            TokenKind::LBracket => {
+                // Read [content] as a bare string value (e.g., [::1]:8080 as directive arg)
+                let mut s = String::new();
+                s.push('[');
+                while !self.check(TokenKind::RBracket) && !self.check(TokenKind::EOF) {
+                    if let Some(lexeme) = &self.peek().lexeme {
+                        s.push_str(lexeme);
+                    }
+                    self.advance();
+                }
+                if self.check(TokenKind::RBracket) {
+                    s.push(']');
+                    self.advance();
+                }
+                // Insert ':' before Number after ']' (port syntax)
+                if s.ends_with(']') && self.check(TokenKind::Number) {
+                    s.push(':');
+                    if let Some(lexeme) = &self.peek().lexeme {
+                        s.push_str(lexeme);
+                    }
+                    self.advance();
+                }
+                // Continue reading trailing bare strings
+                while self.check(TokenKind::StringBare) || self.check(TokenKind::Number) {
+                    if let Some(lexeme) = &self.peek().lexeme {
+                        s.push_str(lexeme);
+                    }
+                    self.advance();
+                }
+                Ok(Value::String(s, span))
             }
 
             TokenKind::InterpStart => {
@@ -488,7 +569,14 @@ impl Parser {
                             message: "Missing token text for Identifier".into(),
                             span: advanced.span,
                         })?);
-                    } else if advanced.kind != TokenKind::Dot {
+                    } else if advanced.kind == TokenKind::StringBare {
+                        // Dotted path continuation within interpolation
+                        if let Some(lexeme) = &advanced.lexeme {
+                            for part in lexeme.split('.').filter(|s| !s.is_empty()) {
+                                parts.push(part.to_string());
+                            }
+                        }
+                    } else {
                         return Err(ParseError {
                             message: "Invalid interpolation".into(),
                             span: advanced.span,
@@ -502,50 +590,49 @@ impl Parser {
                 ))
             }
 
-            TokenKind::Minus => {
-                let token = self.advance_owned();
-                if token.kind != TokenKind::Number {
-                    return Err(ParseError {
-                        message: "Invalid number".into(),
-                        span: token.span,
-                    });
-                }
-                let integer_text = token.lexeme.as_deref().ok_or(ParseError {
-                    message: "Missing token text for Number".into(),
-                    span: token.span,
-                })?;
-                match self.parse_number_literal(integer_text, span, true)? {
-                    ParsedNumber::Integer(integer) => Ok(Value::Integer(integer, span)),
-                    ParsedNumber::Float(number) => Ok(Value::Float(number, span)),
-                }
-            }
-
-            TokenKind::Plus => {
-                let token = self.advance_owned();
-                if token.kind != TokenKind::Number {
-                    return Err(ParseError {
-                        message: "Invalid number".into(),
-                        span: token.span,
-                    });
-                }
-                let integer_text = token.lexeme.as_deref().ok_or(ParseError {
-                    message: "Missing token text for Number".into(),
-                    span: token.span,
-                })?;
-                match self.parse_number_literal(integer_text, span, false)? {
-                    ParsedNumber::Integer(integer) => Ok(Value::Integer(integer, span)),
-                    ParsedNumber::Float(number) => Ok(Value::Float(number, span)),
-                }
-            }
-
             TokenKind::Number => {
                 let integer_text = token.lexeme.as_deref().ok_or(ParseError {
                     message: "Missing token text for Number".into(),
                     span,
                 })?;
-                match self.parse_number_literal(integer_text, span, false)? {
-                    ParsedNumber::Integer(integer) => Ok(Value::Integer(integer, span)),
-                    ParsedNumber::Float(number) => Ok(Value::Float(number, span)),
+
+                // Check if this number is the start of an IP address (e.g., 192.168.1.1)
+                // by looking for StringBare starting with '.' that's NOT a pure decimal
+                if self.check(TokenKind::StringBare)
+                    && self
+                        .peek()
+                        .lexeme
+                        .as_deref()
+                        .is_some_and(|l| l.starts_with('.'))
+                    && !self
+                        .peek()
+                        .lexeme
+                        .as_deref()
+                        .is_some_and(|l| l[1..].chars().all(|c| c.is_ascii_digit()))
+                {
+                    let mut full = integer_text.to_string();
+                    while self.check(TokenKind::StringBare) {
+                        if let Some(lexeme) = &self.peek().lexeme {
+                            full.push_str(lexeme);
+                        }
+                        self.advance();
+                    }
+                    // Strip port suffix (e.g., 192.168.1.1:8080 → 192.168.1.1)
+                    if let Some(pos) = full.rfind(':') {
+                        let port_part = &full[pos + 1..];
+                        if !port_part.is_empty()
+                            && port_part.chars().all(|c| c.is_ascii_digit())
+                            && pos > 0
+                        {
+                            full.truncate(pos);
+                        }
+                    }
+                    Ok(Value::String(full, span))
+                } else {
+                    match self.parse_number_literal(integer_text, span, false)? {
+                        ParsedNumber::Integer(integer) => Ok(Value::Integer(integer, span)),
+                        ParsedNumber::Float(number) => Ok(Value::Float(number, span)),
+                    }
                 }
             }
 
@@ -610,6 +697,16 @@ impl Parser {
                 TokenKind::RBracket if is_ipv6 => {
                     labels = vec![labels.join("")];
                     is_ipv6 = false;
+                    if self.check(TokenKind::Number) {
+                        let port_token = self.advance_owned();
+                        port = Some(Self::token_text(&port_token)?
+                            .parse::<u16>()
+                            .map_err(|_| ParseError {
+                                message: "Invalid port number".into(),
+                                span: port_token.span,
+                            })?);
+                        break;
+                    }
                 }
 
                 TokenKind::Identifier
@@ -621,14 +718,6 @@ impl Parser {
                         message: format!("Missing token text for {:?}", token.kind),
                         span: token.span,
                     })?);
-                }
-
-                TokenKind::Star if !is_ipv6 => {
-                    labels.push("*".into());
-                }
-
-                TokenKind::Colon if is_ipv6 => {
-                    labels.push(":".into());
                 }
 
                 TokenKind::StringBare if is_ipv6 => {
@@ -643,21 +732,81 @@ impl Parser {
                         message: "Missing token text for StringBare".into(),
                         span: token.span,
                     })?;
-                    labels.extend(lexeme.split('.').map(|s| s.to_string()));
-                    if let Some(popped) = labels.pop() {
-                        if popped.contains(':') {
-                            let (host, port_str) =
-                                popped.split_once(':').ok_or_else(|| ParseError {
-                                    message: "Invalid host:port format".into(),
+
+                    if is_ipv6 {
+                        // Inside IPv6 brackets, bare strings are just concatenated
+                        labels.push(lexeme);
+                    } else if lexeme.starts_with('[') && lexeme.contains(']') {
+                        // Handle IPv6 in brackets: [addr] or [addr]:port
+                        if let Some(close_pos) = lexeme.find(']') {
+                            let addr_str = &lexeme[1..close_pos];
+                            let rest = &lexeme[close_pos + 1..];
+
+                            if rest.is_empty() {
+                                let addr: Ipv6Addr = addr_str.parse().map_err(|_| ParseError {
+                                    message: "Invalid IPv6 address".into(),
                                     span: token.span,
                                 })?;
-                            labels.push(host.into());
-                            port = Some(port_str.parse::<u16>().map_err(|_| ParseError {
-                                message: "Invalid port number".into(),
+                                return Ok(HostPattern {
+                                    labels: HostLabels::IpAddr(IpAddr::V6(addr)),
+                                    port: None,
+                                    protocol,
+                                    span: start_span,
+                                });
+                            } else if rest.starts_with(':') && rest.len() > 1 {
+                                let port_str = &rest[1..];
+                                let port_num: u16 = port_str.parse().map_err(|_| ParseError {
+                                    message: "Invalid port number".into(),
+                                    span: token.span,
+                                })?;
+                                let addr: Ipv6Addr = addr_str.parse().map_err(|_| ParseError {
+                                    message: "Invalid IPv6 address".into(),
+                                    span: token.span,
+                                })?;
+                                return Ok(HostPattern {
+                                    labels: HostLabels::IpAddr(IpAddr::V6(addr)),
+                                    port: Some(port_num),
+                                    protocol,
+                                    span: start_span,
+                                });
+                            }
+                        }
+                        labels.extend(lexeme.split('.').map(|s| s.to_string()));
+                    } else {
+                        // Split bare string by dots and commas (not colons)
+                        for part in lexeme.split(['.', ',']) {
+                            if part.is_empty() {
+                                continue;
+                            }
+                            if let Some((host_part, port_str)) = part.split_once(':') {
+                                if !host_part.is_empty() {
+                                    labels.push(host_part.to_string());
+                                }
+                                port = Some(port_str.parse::<u16>().map_err(|_| ParseError {
+                                    message: "Invalid port number".into(),
+                                    span: token.span,
+                                })?);
+                            } else {
+                                labels.push(part.to_string());
+                            }
+                        }
+
+                        // Protocol detection: if next StringBare doesn't start with '.',
+                        // it's a protocol transition
+                        if !labels.is_empty()
+                            && labels.len() <= 1
+                            && protocol.is_none()
+                            && self.check(TokenKind::StringBare)
+                            && self
+                                .peek()
+                                .lexeme
+                                .as_deref()
+                                .is_some_and(|l| !l.starts_with('.'))
+                        {
+                            protocol = Some(labels.pop().ok_or_else(|| ParseError {
+                                message: "Invalid host label".into(),
                                 span: self.peek().span,
                             })?);
-                        } else {
-                            labels.push(popped);
                         }
                     }
                 }
@@ -674,44 +823,22 @@ impl Parser {
                 continue;
             }
 
-            if self.check(TokenKind::Dot) {
-                self.advance();
-            } else if self.check(TokenKind::Colon) {
-                if !is_ipv6 {
-                    self.advance();
-                    let port_token = self.advance_owned();
-                    port = Some(match port_token.kind {
-                        TokenKind::Number => Self::token_text(&port_token)?
-                            .parse::<u16>()
-                            .map_err(|_| ParseError {
-                                message: "Invalid port number".into(),
-                                span: port_token.span,
-                            })?,
-                        _ => {
-                            return Err(ParseError {
-                                message: "Invalid port number".into(),
-                                span: port_token.span,
-                            });
-                        }
-                    });
-                    break;
-                }
-            } else if self.check(TokenKind::StringBare)
-                || self.check(TokenKind::Number)
-                || self.check(TokenKind::Star)
-            {
-                if !is_ipv6 {
-                    if protocol.is_none() && labels.len() == 1 {
+            if self.check(TokenKind::StringBare) || self.check(TokenKind::Number) {
+                if !is_ipv6 && protocol.is_none() && labels.len() == 1 {
+                    let is_host_continuation = self.peek().kind == TokenKind::StringBare
+                        && self
+                            .peek()
+                            .lexeme
+                            .as_deref()
+                            .is_some_and(|l| l.starts_with('.'));
+                    if !is_host_continuation {
                         protocol = Some(labels.pop().ok_or_else(|| ParseError {
                             message: "Invalid host label".into(),
                             span: self.peek().span,
                         })?);
-                    } else {
-                        return Err(ParseError {
-                            message: "Invalid host label".into(),
-                            span: self.peek().span,
-                        });
                     }
+                } else {
+                    break;
                 }
             } else if !is_ipv6 && self.check(TokenKind::LBracket) {
                 if protocol.is_none() && labels.len() == 1 {
@@ -793,17 +920,22 @@ impl Parser {
     }
 
     fn parse_host_block(&mut self) -> Result<HostBlock, ParseError> {
-        let start_span = self.peek().span; // Span of the first host pattern or token that begins the host block
+        let start_span = self.peek().span;
         let mut hosts = Vec::new();
         loop {
             let host = self.parse_host_pattern()?;
             hosts.push(host);
 
-            if self.check(TokenKind::Comma) {
-                self.advance();
-            } else {
-                break;
+            if matches!(
+                self.peek().kind,
+                TokenKind::Identifier
+                    | TokenKind::Number
+                    | TokenKind::StringBare
+                    | TokenKind::LBracket
+            ) {
+                continue;
             }
+            break;
         }
         let block = self.parse_block()?;
 
@@ -822,7 +954,6 @@ impl Parser {
     fn scans_as_host_block(&self) -> bool {
         let mut i = self.pos;
         let mut in_ipv6 = false;
-        let mut suspect_not = false;
 
         while i < self.tokens.len() {
             let token = &self.tokens[i];
@@ -830,23 +961,11 @@ impl Parser {
                 TokenKind::LBrace => return true,
                 TokenKind::LBracket => {
                     in_ipv6 = true;
-                    suspect_not = false;
                 }
                 TokenKind::RBracket => {
                     in_ipv6 = false;
                     i += 1;
                     continue;
-                }
-                TokenKind::StringQuoted
-                | TokenKind::Match
-                | TokenKind::Snippet
-                | TokenKind::Boolean
-                    if !in_ipv6 =>
-                {
-                    if suspect_not {
-                        return false;
-                    }
-                    suspect_not = true;
                 }
                 _ => {}
             }
@@ -856,10 +975,8 @@ impl Parser {
                 continue;
             }
 
-            // Adjacency checks (outside IPv6)
             if i > self.pos {
                 let prev = &self.tokens[i - 1];
-                // If prev was a label part
                 match prev.kind {
                     TokenKind::Identifier
                     | TokenKind::Match
@@ -867,19 +984,16 @@ impl Parser {
                     | TokenKind::Boolean
                     | TokenKind::Number
                     | TokenKind::StringBare
-                    | TokenKind::Star
                     | TokenKind::RBracket => {
-                        // Current must be separator or valid Protocol transition
                         match token.kind {
-                            TokenKind::Dot
-                            | TokenKind::Colon
-                            | TokenKind::LBracket
-                            | TokenKind::Comma
-                            | TokenKind::LBrace => {} // OK
-                            TokenKind::StringBare | TokenKind::Number | TokenKind::Star => {} // Protocol transition OK
+                            TokenKind::LBracket
+                            | TokenKind::LBrace
+                            | TokenKind::StringBare
+                            | TokenKind::Number
+                            | TokenKind::Identifier
+                            | TokenKind::Boolean => {}
                             _ => return false,
                         }
-                        suspect_not = false;
                     }
                     _ => {}
                 }
@@ -928,10 +1042,10 @@ impl Parser {
 
         let mut stmt = match self.peek().kind {
             TokenKind::Number
-            | TokenKind::Star
-            | TokenKind::LBracket
+            | TokenKind::StringBare
             | TokenKind::Identifier
             | TokenKind::Boolean
+            | TokenKind::LBracket
                 if top_level && self.looks_like_host() =>
             {
                 Statement::HostBlock(self.parse_host_block()?)
