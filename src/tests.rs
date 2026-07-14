@@ -1816,3 +1816,49 @@ fn test_escaped_dollar_in_quoted_string() {
     let res = Config::from_str(input);
     assert!(res.is_err(), "Expected error for invalid escape \\$");
 }
+
+#[test]
+fn test_line_continuation_basic() {
+    let input = "directive foo \\\n    bar";
+    eprintln!("input bytes: {:?}", input.as_bytes());
+    let config = Config::from_str(input).expect("line continuation should parse");
+    let d = config.find_directives("directive")[0];
+    eprintln!("args={:?}", d.args);
+    assert_eq!(d.get_string_arg(0), Some("foo"));
+    assert_eq!(d.get_string_arg(1), Some("bar"));
+}
+
+#[test]
+fn test_line_continuation_with_comment() {
+    let input = "directive foo \\ # comment\n    bar";
+    let config = Config::from_str(input).expect("line continuation with comment should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("foo"));
+    assert_eq!(d.get_string_arg(1), Some("bar"));
+}
+
+#[test]
+fn test_line_continuation_multiple() {
+    let input = "directive \\\n    foo \\\n    bar";
+    let config = Config::from_str(input).expect("multiple line continuations should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("foo"));
+    assert_eq!(d.get_string_arg(1), Some("bar"));
+}
+
+#[test]
+fn test_line_continuation_in_block() {
+    let input = "example.com {\n    root /var/www \\\n        html\n}";
+    let config = Config::from_str(input).expect("line continuation in block should parse");
+    let hb = config.find_host_blocks()[0];
+    assert_eq!(hb.block.find_directives("root").len(), 1);
+}
+
+#[test]
+fn test_backslash_in_bare_string_no_continuation() {
+    // `\` followed by a non-newline char is just a bare string character.
+    let input = r#"directive foo\bar"#;
+    let config = Config::from_str(input).expect("backslash in bare string should parse");
+    let d = config.find_directives("directive")[0];
+    assert_eq!(d.get_string_arg(0), Some("foo\\bar"));
+}

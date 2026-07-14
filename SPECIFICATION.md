@@ -19,6 +19,7 @@ The configuration file is encoded in UTF-8 and contains:
 
 - **Whitespace** (spaces, tabs, newlines) is discarded by the lexer except where syntactically significant.
 - **Comments** begin with `#` and extend to the end of the line.
+- **Line continuation** — a backslash (`\`) at the end of a line (optionally followed by a comment) causes the newline to be treated as whitespace, joining the current line with the next. This is useful for splitting long directives across multiple lines.
 
 ### 2.3 Tokens
 
@@ -69,6 +70,10 @@ server_name example.com
 max_connections 1000
 enabled true
 cert "{{env.TLS_CERT}}"
+
+# Line continuation — the backslash joins lines
+proxy http://localhost:3000 \
+    http://localhost:3001
 ```
 
 ### 4.2 Host blocks
@@ -411,6 +416,7 @@ The reference parser reports errors with:
 - Each token records a `had_whitespace` flag indicating whether whitespace preceded it. This is used by the parser for adjacency validation.
 - Invalid escape sequences in quoted strings (e.g., `\z`, `\$`) are a lexer error.
 - Raw strings (`r"..."`) are tokenized as `StringRaw` tokens with the content between the quotes taken literally — no escape processing.
+- A backslash (`\`) at the end of a line (optionally followed by a comment) is treated as whitespace — the newline is discarded and the next line is joined. This does NOT count as a newline for bare-string parsing purposes.
 
 ### 9.2 Parser behavior
 

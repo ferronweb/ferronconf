@@ -3,6 +3,7 @@
   "scopeName": "source.ferron",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#line-continuation" },
     { "include": "#match-block" },
     { "include": "#snippet-block" },
     { "include": "#host-block" },
@@ -90,6 +91,7 @@
       "end": "(?=\\{(?!\\{)|$|;)",
       "patterns": [
         { "include": "#comment" },
+        { "include": "#line-continuation" },
         { "include": "#number" },
         { "include": "#boolean" },
         { "include": "#string" },
@@ -110,6 +112,7 @@
       },
       "patterns": [
         { "include": "#comment" },
+        { "include": "#line-continuation" },
         { "include": "#directive" },
         { "include": "#match-block" },
         { "include": "#snippet-block" },
@@ -166,6 +169,7 @@
           "name": "meta.matcher.expression.ferron",
           "patterns": [
             { "include": "#comment" },
+            { "include": "#line-continuation" },
             { "include": "#identifier-path" },
             { "include": "#operator" },
             { "include": "#string" },
@@ -184,6 +188,11 @@
     "semicolon": {
       "name": "punctuation.delimiter.semicolon.ferron",
       "match": ";"
+    },
+
+    "line-continuation": {
+      "name": "keyword.control.line-continuation.ferron",
+      "match": "\\\\(?=\\s*(?:$|#))"
     }
   }
 }

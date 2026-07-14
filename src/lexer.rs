@@ -190,13 +190,54 @@ impl<'a> Lexer<'a> {
         let mut had_newlines = false;
         let mut had_whitespace = false;
         let mut consecutive_newlines: usize = 0;
-        while matches!(self.current, Some(c) if c.is_whitespace()) {
-            had_whitespace = true;
-            if matches!(self.current, Some('\n') | Some('\r')) {
-                had_newlines = true;
-                consecutive_newlines += 1;
+        loop {
+            while matches!(self.current, Some(c) if c.is_whitespace()) {
+                had_whitespace = true;
+                if matches!(self.current, Some('\n') | Some('\r')) {
+                    had_newlines = true;
+                    consecutive_newlines += 1;
+                }
+                self.advance();
             }
-            self.advance();
+
+            // Line continuation: `\` followed by optional comment + newline
+            if self.current == Some('\\') {
+                // Save state in case this isn't actually a continuation
+                let saved_line = self.line;
+                let saved_column = self.column;
+                let saved_current = self.current;
+                let saved_next = self.next;
+
+                self.advance(); // skip `\`
+
+                // Skip whitespace after `\`
+                while matches!(self.current, Some(c) if c.is_whitespace() && c != '\n' && c != '\r') {
+                    self.advance();
+                }
+
+                // If there's a comment, skip it
+                if self.current == Some('#') {
+                    while matches!(self.current, Some(c) if c != '\n' && c != '\r') {
+                        self.advance();
+                    }
+                }
+
+                // If we reached a newline, this is a valid continuation
+                if matches!(self.current, Some('\n') | Some('\r')) {
+                    had_whitespace = true;
+                    // Note: do NOT set had_newlines — continuation acts as whitespace
+                    self.advance();
+                    continue; // keep skipping whitespace
+                }
+
+                // Not a continuation — restore state
+                self.line = saved_line;
+                self.column = saved_column;
+                self.current = saved_current;
+                self.next = saved_next;
+            }
+
+            break;
         }
         // blank lines = newlines - 1 (e.g., 2 newlines = 1 blank line)
         let blank_lines = consecutive_newlines.saturating_sub(1);

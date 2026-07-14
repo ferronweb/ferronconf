@@ -1,4 +1,4 @@
-/* whitespace would be discarded by a lexer */
+/* whitespace and line continuations are discarded by a lexer */
 
 config          ::= ( ';' | statement )* EOF
 
@@ -96,7 +96,8 @@ boolean         ::= 'true'
 
 number          ::= ( '-' | '+' )? DIGIT+ ( '.' DIGIT+ )?
 
-/* comments are skipped. */
+/* comments and line continuations are discarded by a lexer. */
+/* a line continuation is `\` followed by optional comment + newline */
 comment         ::= '#' comment-char*
 comment-char    ::= . - ( '\r' | '\n' )
 
