@@ -161,8 +161,8 @@ impl FromStr for Config {
                 Ok(None) => break,
                 Err(e) => {
                     return Err(crate::parser::ParseError {
-                        message: e,
-                        span: crate::lexer::Span { line: 0, column: 0 },
+                        message: e.message,
+                        span: e.span,
                     })
                 }
             }

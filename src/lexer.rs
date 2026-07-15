@@ -123,6 +123,30 @@ impl Token {
     }
 }
 
+/// A lexer error with message and source location.
+///
+/// Errors are returned when the lexer encounters invalid syntax
+/// or unexpected tokens.
+#[derive(Debug, Clone)]
+pub struct LexerError {
+    /// A human-readable error message.
+    pub message: String,
+    /// The source location where the error occurred.
+    pub span: Span,
+}
+
+impl std::fmt::Display for LexerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Lexer error at line {}, column {}: {}",
+            self.span.line, self.span.column, self.message
+        )
+    }
+}
+
+impl std::error::Error for LexerError {}
+
 /// The lexer that converts source text into tokens.
 ///
 /// The lexer implements [`Iterator`] to produce tokens one at a time.
@@ -292,7 +316,7 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn read_string(&mut self) -> Result<String, String> {
+    fn read_string(&mut self) -> Result<String, LexerError> {
         let mut s = String::new();
 
         self.advance(); // skip opening "
@@ -312,16 +336,22 @@ impl<'a> Lexer<'a> {
                     Some('\\') => s.push('\\'),
                     Some('"') => s.push('"'),
                     Some(other) => {
-                        return Err(format!(
-                            "Invalid escape sequence \\{} at line {}, column {}",
-                            other, escape_start.0, escape_start.1
-                        ))
+                        return Err(LexerError {
+                            message: format!("Invalid escape sequence \\{}", other),
+                            span: Span {
+                                line: escape_start.0,
+                                column: escape_start.1,
+                            },
+                        })
                     }
                     None => {
-                        return Err(format!(
-                            "Invalid escape sequence at end of file (line {}, column {})",
-                            escape_start.0, escape_start.1
-                        ))
+                        return Err(LexerError {
+                            message: "Invalid escape sequence at end of file".into(),
+                            span: Span {
+                                line: escape_start.0,
+                                column: escape_start.1,
+                            },
+                        })
                     }
                 }
             } else {
@@ -415,7 +445,7 @@ impl<'a> Lexer<'a> {
     /// # Returns
     ///
     /// The next [`Token`], or `EOF` if at the end of input.
-    pub fn next_token(&mut self) -> Result<Token, String> {
+    pub fn next_token(&mut self) -> Result<Token, LexerError> {
         loop {
             let (had_newlines, had_whitespace, blank_lines) = self.skip_whitespace();
             self.blank_line_counts.push(blank_lines);
@@ -429,7 +459,7 @@ impl<'a> Lexer<'a> {
                 Some('{') if self.peek() == Some('{') => {
                     self.advance();
                     self.advance();
-                    Ok::<_, String>(Token::bare(TokenKind::InterpStart, span))
+                    Ok::<_, LexerError>(Token::bare(TokenKind::InterpStart, span))
                 }
 
                 Some('}') if self.peek() == Some('}') => {
@@ -579,7 +609,7 @@ impl Lexer<'_> {
     ///
     /// Returns `None` after EOF has been returned once.
     /// Returns `Err` on lexer errors (e.g., invalid escape sequences).
-    pub fn next_or_error(&mut self) -> Result<Option<Token>, String> {
+    pub fn next_or_error(&mut self) -> Result<Option<Token>, LexerError> {
         if self
             .prev_token
             .as_ref()
