@@ -640,16 +640,6 @@ impl Parser {
                         }
                         self.advance();
                     }
-                    // Strip port suffix (e.g., 192.168.1.1:8080 → 192.168.1.1)
-                    if let Some(pos) = full.rfind(':') {
-                        let port_part = &full[pos + 1..];
-                        if !port_part.is_empty()
-                            && port_part.chars().all(|c| c.is_ascii_digit())
-                            && pos > 0
-                        {
-                            full.truncate(pos);
-                        }
-                    }
                     Ok(Value::String(full, span))
                 } else {
                     match self.parse_number_literal(integer_text, span, false)? {

@@ -1561,7 +1561,7 @@ fn test_bare_string_ipv4_with_port_inside_host() {
     let config = Config::from_str(input).expect("bare string with IPv4 addr should parse");
     let hb = config.find_host_blocks()[0];
     let d = hb.block.find_directives("host")[0];
-    assert_eq!(d.get_string_arg(0), Some("192.168.1.1"));
+    assert_eq!(d.get_string_arg(0), Some("192.168.1.1:8080"));
 }
 
 #[test]
