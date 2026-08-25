@@ -1085,7 +1085,7 @@ impl Parser {
             });
         }
 
-        if self.check(TokenKind::RBrace) {
+        if self.check(TokenKind::RBrace) && !top_level {
             return Ok(leading_comments);
         }
 

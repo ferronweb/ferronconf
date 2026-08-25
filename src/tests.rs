@@ -1885,3 +1885,9 @@ fn test_backslash_in_bare_string_no_continuation() {
     let d = config.find_directives("directive")[0];
     assert_eq!(d.get_string_arg(0), Some("foo\\bar"));
 }
+
+#[test]
+fn test_stray_closing_curly_brace() {
+    let input = r#"directive foo }"#;
+    Config::from_str(input).expect_err("stray closing curly brace should error out");
+}
