@@ -1891,3 +1891,32 @@ fn test_stray_closing_curly_brace() {
     let input = r#"directive foo }"#;
     Config::from_str(input).expect_err("stray closing curly brace should error out");
 }
+
+#[test]
+fn test_http_ip_port() {
+    let input = r#"http 127.0.0.1:18081 {
+    root /var/www/html
+}"#;
+    let config = Config::from_str(input).expect("http ip port should parse");
+    let host_blocks = config.find_host_blocks();
+    assert_eq!(host_blocks.len(), 1);
+    let host_block = &host_blocks[0];
+    let host_patterns = host_block.get_host_patterns();
+    assert_eq!(host_patterns.len(), 1);
+    assert_eq!(host_patterns[0], "http 127.0.0.1:18081");
+}
+
+#[test]
+fn test_http_ip_port_multi() {
+    let input = r#"http 127.0.0.1:18081, http 10.0.0.1:18081 {
+    root /var/www/html
+}"#;
+    let config = Config::from_str(input).expect("http ip port should parse");
+    let host_blocks = config.find_host_blocks();
+    assert_eq!(host_blocks.len(), 1);
+    let host_block = &host_blocks[0];
+    let host_patterns = host_block.get_host_patterns();
+    assert_eq!(host_patterns.len(), 2);
+    assert_eq!(host_patterns[0], "http 127.0.0.1:18081");
+    assert_eq!(host_patterns[1], "http 10.0.0.1:18081");
+}

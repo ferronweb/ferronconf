@@ -847,7 +847,7 @@ impl Parser {
             }
 
             if self.check(TokenKind::StringBare) || self.check(TokenKind::Number) {
-                if !is_ipv6 && protocol.is_none() && labels.len() == 1 {
+                if !is_ipv6 && labels.len() == 1 {
                     let is_host_continuation = self.peek().kind == TokenKind::StringBare
                         && self
                             .peek()
