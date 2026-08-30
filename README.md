@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ferronconf = "0.2.0"
+ferronconf = "0.5"
 ```
 
 ## Quick start
@@ -161,13 +161,13 @@ server_name example.com  # inline comment
 
 ## Data types
 
-| Type | Example | Description |
-|------|---------|-------------|
-| String (quoted) | `"hello world"` | Supports escape sequences (`\n`, `\t`, `\\`, `\"`) |
-| String (bare) | `example.com` | Unquoted alphanumeric with `_-.:/+*` |
-| Number | `80`, `3.14`, `-10` | Integer or decimal |
-| Boolean | `true`, `false` | Case-sensitive literals |
-| Interpolation | `{{env.TLS_CERT}}` | Variable reference with dotted path |
+| Type            | Example             | Description                                        |
+| --------------- | ------------------- | -------------------------------------------------- |
+| String (quoted) | `"hello world"`     | Supports escape sequences (`\n`, `\t`, `\\`, `\"`) |
+| String (bare)   | `example.com`       | Unquoted alphanumeric with `_-.:/+*`               |
+| Number          | `80`, `3.14`, `-10` | Integer or decimal                                 |
+| Boolean         | `true`, `false`     | Case-sensitive literals                            |
+| Interpolation   | `{{env.TLS_CERT}}`  | Variable reference with dotted path                |
 
 ## Library API
 
@@ -279,16 +279,16 @@ for host_block in config.find_host_blocks() {
             HostLabels::Hostname(labels) => { /* e.g., ["example", "com"] */ }
             HostLabels::IpAddr(ip) => { /* IPv4 or IPv6 */ }
         }
-        
+
         if let Some(port) = pattern.port {
             // ...
         }
-        
+
         if let Some(protocol) = &pattern.protocol {
             // e.g., "http", "tcp"
         }
     }
-    
+
     // Check if block matches a specific host
     if host_block.matches_host("example.com") {
         // ...
@@ -301,7 +301,7 @@ for host_block in config.find_host_blocks() {
 ```rust
 for match_block in config.find_match_blocks() {
     println!("Matcher: {}", match_block.matcher);
-    
+
     for expr in &match_block.expr {
         match &expr.left {
             Operand::Identifier(path, _) => {
@@ -312,9 +312,9 @@ for match_block in config.find_match_blocks() {
             }
             _ => {}
         }
-        
+
         println!("  Operator: {}", expr.op.as_str());
-        
+
         // Check operator type
         if expr.is_equality() { /* ... */ }
         if expr.is_regex() { /* ... */ }
@@ -333,7 +333,7 @@ use std::str::FromStr;
 match Config::from_str(input) {
     Ok(config) => { /* ... */ }
     Err(ParseError { message, span }) => {
-        eprintln!("Error at line {}, column {}: {}", 
+        eprintln!("Error at line {}, column {}: {}",
                   span.line, span.column, message);
     }
 }
