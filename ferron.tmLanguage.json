@@ -113,9 +113,9 @@
       "patterns": [
         { "include": "#comment" },
         { "include": "#line-continuation" },
-        { "include": "#directive" },
         { "include": "#match-block" },
         { "include": "#snippet-block" },
+        { "include": "#directive" },
         { "include": "#block" },
         { "include": "#semicolon" }
       ]
