@@ -635,8 +635,15 @@ impl Parser {
                 {
                     let mut full = integer_text.to_string();
                     while self.check(TokenKind::StringBare) {
-                        if let Some(lexeme) = &self.peek().lexeme {
-                            full.push_str(lexeme);
+                        {
+                            let peeked = self.peek();
+                            if peeked.had_whitespace {
+                                // Don't jam other bare strings together
+                                break;
+                            }
+                            if let Some(lexeme) = &peeked.lexeme {
+                                full.push_str(lexeme);
+                            }
                         }
                         self.advance();
                     }

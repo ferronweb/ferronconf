@@ -1920,3 +1920,27 @@ fn test_http_ip_port_multi() {
     assert_eq!(host_patterns[0], "http 127.0.0.1:18081");
     assert_eq!(host_patterns[1], "http 10.0.0.1:18081");
 }
+
+#[test]
+fn test_jammed_ip_addresses() {
+    let input = r#"example.com {
+    ip 127.0.0.1 ::1 192.168.1.0/24
+}"#;
+    let config = Config::from_str(input).expect("config should parse");
+    let host_blocks = config.find_host_blocks();
+    assert_eq!(host_blocks.len(), 1);
+    let host_block = &host_blocks[0];
+    let ip = host_block
+        .block
+        .statements
+        .first()
+        .expect("expected a statement");
+    let Statement::Directive(directive) = ip else {
+        panic!("expected a directive, got {:?}", ip);
+    };
+    assert_eq!(directive.name, "ip");
+    assert_eq!(directive.args.len(), 3);
+    assert_eq!(directive.args[0].as_str(), Some("127.0.0.1"));
+    assert_eq!(directive.args[1].as_str(), Some("::1"));
+    assert_eq!(directive.args[2].as_str(), Some("192.168.1.0/24"));
+}
