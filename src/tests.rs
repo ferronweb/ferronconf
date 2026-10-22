@@ -302,6 +302,8 @@ directive_bools true false
 fn test_host_patterns() {
     let input = r#"
 [::1] {}
+[::1]:8080 {}
+[2001:db8::1] {}
 [2001:db8::1]:8080 {}
 127.0.0.1 {}
 "#;
@@ -312,10 +314,11 @@ fn test_host_patterns() {
         .iter()
         .find_map(|s| {
             if let Statement::HostBlock(hb) = s {
-                if hb.hosts[0].labels
-                    == crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(
-                        std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
-                    ))
+                if hb.hosts[0].port == None
+                    && hb.hosts[0].labels
+                        == crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(
+                            std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
+                        ))
                 {
                     Some(hb)
                 } else {
@@ -327,12 +330,59 @@ fn test_host_patterns() {
         })
         .expect("IPv6 localhost not found");
 
-    let ipv6_port = config
+    config
         .statements
         .iter()
         .find_map(|s| {
             if let Statement::HostBlock(hb) = s {
-                if hb.hosts[0].port == Some(8080) {
+                if hb.hosts[0].port == Some(8080)
+                    && hb.hosts[0].labels
+                        == crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(
+                            std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
+                        ))
+                {
+                    Some(hb)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .expect("IPv6 localhost with port not found");
+
+    config
+        .statements
+        .iter()
+        .find_map(|s| {
+            if let Statement::HostBlock(hb) = s {
+                if hb.hosts[0].port == None
+                    && hb.hosts[0].labels
+                        == crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(
+                            std::net::Ipv6Addr::new(8193, 3512, 0, 0, 0, 0, 0, 1),
+                        ))
+                {
+                    Some(hb)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .expect("IPv6 not found");
+
+    config
+        .statements
+        .iter()
+        .find_map(|s| {
+            if let Statement::HostBlock(hb) = s {
+                if hb.hosts[0].port == Some(8080)
+                    && hb.hosts[0].labels
+                        == crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(
+                            std::net::Ipv6Addr::new(8193, 3512, 0, 0, 0, 0, 0, 1),
+                        ))
+                {
                     Some(hb)
                 } else {
                     None
@@ -342,13 +392,6 @@ fn test_host_patterns() {
             }
         })
         .expect("IPv6 with port not found");
-
-    // Check IPv6 address explicitly
-    if let crate::ast::HostLabels::IpAddr(std::net::IpAddr::V6(addr)) = &ipv6_port.hosts[0].labels {
-        assert_eq!(addr.to_string(), "2001:db8::1");
-    } else {
-        panic!("Expected IPv6 address");
-    }
 
     let ipv4 = config
         .statements
